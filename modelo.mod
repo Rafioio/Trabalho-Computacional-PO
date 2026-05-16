@@ -7,7 +7,12 @@
 // =================================================================
 
 int NumN = ...;
-range C = 1..NumN;
+range N = 1..NumN;
+
+{int} C = ...;
+assert forall(i in C) i in N;
+
+{int} T = {i | i in N : !(i in C)};
 
 int NumK = ...;
 range K = 1..NumK;
@@ -45,7 +50,7 @@ setof(DemandaRota) L = ...;
 // Distância caminhada demanda-parada
 // -----------------------------------------------------
 
-float d[Q][C] = ...;
+float d[Q][N] = ...;
 
 // -----------------------------------------------------
 // Nível de demanda
@@ -70,7 +75,7 @@ float P = ...;
 // Viabilidade técnica do ponto
 // -----------------------------------------------------
 
-float w[C] = ...;
+float w[N] = ...;
 
 // -----------------------------------------------------
 // Capacidade total disponível
@@ -88,7 +93,7 @@ int m_max = ...;
 // Distância viária da rota
 // -----------------------------------------------------
 
-float D[K][C][C] = ...;
+float D[K][N][N] = ...;
 
 // -----------------------------------------------------
 // Rotas ordenadas
@@ -154,7 +159,7 @@ setof(s_info) S_Indices =
 // Ativação do ponto
 // -----------------------------------------------------
 
-dvar boolean x[C];
+dvar boolean x[N];
 
 // -----------------------------------------------------
 // Rota opera no ponto
@@ -234,7 +239,7 @@ dexpr float f2 =
 
 dexpr float f3 =
 
-    sum(n in C)
+    sum(n in T)
 
         x[n];
 
@@ -352,7 +357,7 @@ subject to {
     // (7) Limite operacional do ponto
     // -------------------------------------------------
 
-    forall(n in C)
+    forall(n in N)
 
         sum(<n,k> in I)
 
