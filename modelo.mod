@@ -64,7 +64,7 @@ float d_walk_max  = ...;
 // Penalidade por não atendimento
 // -----------------------------------------------------
 
-float P[Q] = ...;
+float P = ...;
 
 // -----------------------------------------------------
 // Viabilidade técnica do ponto
@@ -214,7 +214,7 @@ dexpr float f1 =
 
             )
 
-            * P[q]
+            * P
 
         );
 
