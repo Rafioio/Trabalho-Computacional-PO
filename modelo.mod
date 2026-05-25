@@ -7,13 +7,21 @@
 // =================================================================
 
 int NumN = ...;
-range C = 1..NumN;
+
+range N = 1..NumN;
+
+{int} C = ...;
+assert forall(i in C) i in N;
+
+{int} T = {i | i in N : !(i in C)};
 
 int NumK = ...;
 range K = 1..NumK;
 
 int NumQ = ...;
 range Q = 1..NumQ;
+
+float omega = ...;
 
 // -----------------------------------------------------
 // Pares válidos rota-parada
@@ -45,7 +53,7 @@ setof(DemandaRota) L = ...;
 // Distância caminhada demanda-parada
 // -----------------------------------------------------
 
-float d[Q][C] = ...;
+float d[Q][N] = ...;
 
 // -----------------------------------------------------
 // Nível de demanda
@@ -70,7 +78,7 @@ float P = ...;
 // Viabilidade técnica do ponto
 // -----------------------------------------------------
 
-float w[C] = ...;
+float w[N] = ...;
 
 // -----------------------------------------------------
 // Capacidade total disponível
@@ -88,7 +96,7 @@ int m_max = ...;
 // Distância viária da rota
 // -----------------------------------------------------
 
-float D[K][C][C] = ...;
+float D[K][N][N] = ...;
 
 // -----------------------------------------------------
 // Rotas ordenadas
@@ -154,7 +162,7 @@ setof(s_info) S_Indices =
 // Ativação do ponto
 // -----------------------------------------------------
 
-dvar boolean x[C];
+dvar boolean x[N];
 
 // -----------------------------------------------------
 // Rota opera no ponto
@@ -173,6 +181,13 @@ dvar float+ a[a_domain] in 0..1;
 // -----------------------------------------------------
 
 dvar int+ Cap[K];
+
+// -----------------------------------------------------
+// Capacidade adicional para as rota
+// -----------------------------------------------------
+
+dvar int+ Cad;
+
 
 // -----------------------------------------------------
 // Variável de folga de espaçamento
@@ -234,9 +249,7 @@ dexpr float f2 =
 
 dexpr float f3 =
 
-    sum(n in C)
-
-        x[n];
+    (omega * Cad) +  sum(n in T) x[n];
 
 // -----------------------------------------------------
 // f4 = penalidade de espaçamento
@@ -244,9 +257,7 @@ dexpr float f3 =
 
 dexpr float f4 =
 
-    sum(si in S_Indices)
-
-        s_k[si];
+    sum(si in S_Indices) s_k[si];
 
 // -----------------------------------------------------
 // Função Objetivo Agregada
@@ -352,7 +363,7 @@ subject to {
     // (7) Limite operacional do ponto
     // -------------------------------------------------
 
-    forall(n in C)
+    forall(n in N)
 
         sum(<n,k> in I)
 
@@ -368,6 +379,31 @@ subject to {
 
         Cap[k]
 
-    <= Capt;
+    <= Capt + Cad;
+}
+
+execute {
+
+    // -------------------------------------------------
+    // Impressão dos resultados
+    // -------------------------------------------------
+
+    // Imprime o valor final da Função Objetivo
+    writeln("Valor da função objetivo: ", cplex.getObjValue());
+
+    // No OPL, você não usa cplex.getValue(), basta usar a própria variável!
+    writeln("f1 (custo social): ", f1);
+    writeln("f2 (viabilidade técnica): ", f2);
+    writeln("f3 (custo de infraestrutura): ", f3);
+    writeln("f4 (penalidade de espaçamento): ", f4);
+
+    writeln("\nCapacidade das rotas:");
+    for(var k in K) {
+        // Usa Cap[k] direto
+        writeln(" - Rota ", k, ": Capacidade = ", Cap[k]);
+    }
+
+    writeln("\nCapacidade adicional para as rotas: Cad = ", Cad);
+
 }
 
