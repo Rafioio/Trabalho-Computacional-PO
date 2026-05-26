@@ -11,6 +11,8 @@ def parse_args():
     parser.add_argument("--data", default=None, help="Path to .dat or .json file")
     parser.add_argument("--json", action="store_true", help="Load from JSON (faster)")
     parser.add_argument("--no-validate", action="store_true", help="Skip validation")
+    parser.add_argument("--normalize-weights", action="store_true", help="Normalize weights via utopia/anti-utopia payoff table")
+    parser.add_argument("--verbose-normalization", action="store_true", help="Print payoff table and normalization details")
     return parser.parse_args()
 
 
@@ -53,6 +55,15 @@ def main():
             print("Validation FAILED. Aborting.")
             sys.exit(1)
         print("Validation OK.")
+
+    # ---- Weight normalization ----
+    if args.normalize_weights:
+        from src.utils.weight_normalizer import normalize_weights
+        print("Normalizando pesos via matriz payoff utopia/anti-utopia...")
+        normalize_weights(data, verbose=args.verbose_normalization)
+        fac = data["_normalization"]["factors"]
+        print(f"Fatores de normalização: f1={fac[0]:.6f}  f2={fac[1]:.6f}  f3={fac[2]:.6f}  f4={fac[3]:.6f}")
+        print(f"Pós-normalização: W1={data['W1']:.6f}  W2={data['W2']:.6f}  W3={data['W3']:.6f}  W4={data['W4']:.6f}")
 
     # ---- Solve ----
     from src.model.solver import build_and_solve

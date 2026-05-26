@@ -2,7 +2,7 @@ import gurobipy as gp
 from gurobipy import GRB
 
 
-def build_objective(model, data, vars, domains):
+def build_objective_exprs(data, vars, domains):
     Q = data["Q"]
     N = data["N"]
     K = data["K"]
@@ -13,10 +13,6 @@ def build_objective(model, data, vars, domains):
     w = data["w"]
     omega = data["omega"]
     P = data["P"]
-    W1 = data["W1"]
-    W2 = data["W2"]
-    W3 = data["W3"]
-    W4 = data["W4"]
 
     a_domain = domains["a_domain"]
     S_Indices = domains["S_Indices"]
@@ -48,5 +44,15 @@ def build_objective(model, data, vars, domains):
 
     f4 = gp.quicksum(vars["s_k"][k, idx] for (k, idx) in S_Indices)
 
-    model.setObjective(W1 * f1 + W2 * f2 + W3 * f3 + W4 * f4, GRB.MINIMIZE)
     return {"f1": f1, "f2": f2, "f3": f3, "f4": f4}
+
+
+def build_objective(model, data, vars, domains):
+    exprs = build_objective_exprs(data, vars, domains)
+    W1 = data["W1"]
+    W2 = data["W2"]
+    W3 = data["W3"]
+    W4 = data["W4"]
+
+    model.setObjective(W1 * exprs["f1"] + W2 * exprs["f2"] + W3 * exprs["f3"] + W4 * exprs["f4"], GRB.MINIMIZE)
+    return exprs
