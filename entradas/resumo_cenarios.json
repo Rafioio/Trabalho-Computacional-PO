@@ -1,0 +1,62 @@
+[
+  {
+    "cenario": 1,
+    "arquivo": "cenario_01.json",
+    "semente": 3993036655,
+    "demanda_total": 1906
+  },
+  {
+    "cenario": 2,
+    "arquivo": "cenario_02.json",
+    "semente": 3993064191,
+    "demanda_total": 2617
+  },
+  {
+    "cenario": 3,
+    "arquivo": "cenario_03.json",
+    "semente": 3993076238,
+    "demanda_total": 2669
+  },
+  {
+    "cenario": 4,
+    "arquivo": "cenario_04.json",
+    "semente": 3993089488,
+    "demanda_total": 2214
+  },
+  {
+    "cenario": 5,
+    "arquivo": "cenario_05.json",
+    "semente": 3993102781,
+    "demanda_total": 2892
+  },
+  {
+    "cenario": 6,
+    "arquivo": "cenario_06.json",
+    "semente": 3993116665,
+    "demanda_total": 2374
+  },
+  {
+    "cenario": 7,
+    "arquivo": "cenario_07.json",
+    "semente": 3993128059,
+    "demanda_total": 2240
+  },
+  {
+    "cenario": 8,
+    "arquivo": "cenario_08.json",
+    "semente": 3993141722,
+    "demanda_total": 2786
+  },
+  {
+    "cenario": 9,
+    "arquivo": "cenario_09.json",
+    "semente": 3993153618,
+    "demanda_total": 2948
+  },
+  {
+    "cenario": 10,
+    "arquivo": "cenario_10.json",
+    "semente": 3993164947,
+    "demanda_total": 2061
+  }
+]
