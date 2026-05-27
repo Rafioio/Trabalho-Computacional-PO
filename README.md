@@ -27,6 +27,18 @@ Para rodar este projeto localmente, você precisará de:
 * **Gurobi Optimizer** com licença válida (`gurobipy`)
 * Editor de código (ex: **VS Code**) com terminal integrado.
 
+## Configuração do Ambiente
+
+Crie e ative um ambiente virtual, depois instale as dependências:
+
+```bash
+python3 -m venv venv
+source venv/bin/activate          # Linux/Mac
+# venv\Scripts\activate           # Windows (PowerShell)
+
+pip install -r requirements.txt
+```
+
 ## 📁 Estrutura de Arquivos
 ```
 src/
@@ -40,9 +52,13 @@ src/
 │   ├── objective.py       # Função objetivo (f1-f4)
 │   ├── constraints.py     # Restrições do modelo (8 grupos)
 │   └── solver.py          # Montagem e otimização
+├── scripts/
+│   └── map_viewer.py      # Visualização de cenários e soluções
 ├── utils/
-│   ├── generate_data.py   # Gerador de dados sintéticos
-│   └── validator.py       # Validação de consistência dos dados
+│   ├── generate_data.py   # Gerador de dados sintéticos realistas
+│   ├── validator.py       # Validação de consistência dos dados
+│   ├── weight_normalizer.py # Normalização utopia/anti-utopia
+│   └── export_solution.py # Exportação de resultados (→ solucao.json)
 └── run.py                 # Ponto de entrada principal
 ```
 
@@ -64,8 +80,23 @@ python -m src.run --data /caminho/para/dados.dat
 Para gerar dados sintéticos para teste:
 
 ```bash
-python src/utils/generate_data.py
-python src/utils/generate_data.py --num-n 50 --num-k 3 --num-q 5 --output teste.json
+python src/utils/generate_data.py                                    # 50 nós, 5 rotas, 35 zonas
+python src/utils/generate_data.py --num-n 50 --num-k 3 --num-q 5     # custom
+python src/utils/generate_data.py --seed 42 --output teste.json      # reprodutível
+python src/utils/generate_data.py --scenarios 10                     # lote de 10 cenários
+```
+
+Para visualizar os dados gerados:
+
+```bash
+python src/scripts/map_viewer.py                        # abre dados_generated.json
+python src/scripts/map_viewer.py cenario_01.json        # arquivo específico
+```
+
+Para exportar a solução do solver para o visualizador:
+
+```bash
+python -c "from src.utils.export_solution import export_solution; from src.model.solver import build_and_solve; from src.data.loader import load_json; d=load_json('dados_generated.json'); r=build_and_solve(d); export_solution(r,d)"
 ```
 
 ## 🔄 Histórico de Migração
