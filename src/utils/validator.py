@@ -1,3 +1,6 @@
+import numpy as np
+
+
 def validate(data):
     errors = []
 
@@ -39,20 +42,27 @@ def validate(data):
         if k not in K_list:
             errors.append(f"L contains invalid route {k}")
 
-    # Check d dimensions
     d = data.get("d", [])
     if len(d) != NumQ:
         errors.append(f"d rows ({len(d)}) != Q ({NumQ})")
-    elif d and len(d[0]) != NumN:
+    elif len(d) > 0 and len(d[0]) != NumN:
         errors.append(f"d cols ({len(d[0])}) != N ({NumN})")
 
     D = data.get("D", [])
-    if len(D) != NumK:
-        errors.append(f"D outer ({len(D)}) != K ({NumK})")
-    elif D and len(D[0]) != NumN:
-        errors.append(f"D mid ({len(D[0])}) != N ({NumN})")
-    elif D and D[0] and len(D[0][0]) != NumN:
-        errors.append(f"D inner ({len(D[0][0])}) != N ({NumN})")
+    D_len = len(D) if not isinstance(D, np.ndarray) else D.shape[0]
+    if D_len != NumK:
+        errors.append(f"D outer ({D_len}) != K ({NumK})")
+    elif D_len > 0:
+        d1 = len(D[0]) if not isinstance(D, np.ndarray) else D.shape[1]
+        if d1 != NumN:
+            errors.append(f"D mid ({d1}) != N ({NumN})")
+        else:
+            if not isinstance(D, np.ndarray):
+                d2 = len(D[0][0]) if D[0] else 0
+            else:
+                d2 = D.shape[2]
+            if d2 != NumN:
+                errors.append(f"D inner ({d2}) != N ({NumN})")
 
     V = data.get("V", [])
     V_tamanho = data.get("V_tamanho", [])

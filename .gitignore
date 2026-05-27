@@ -42,3 +42,14 @@ Thumbs.db
 
 # Generated JSON data (regenerate via loader.py)
 src/data/dados.json
+
+# Generated data files (regenerate via generate_data.py)
+dados_generated.json
+cenario_*.json
+solucao.json
+resumo_cenarios.json
+
+# Exports and artifacts
+*.png
+coordenadas.csv
+ultima_semente.txt.ai-jail

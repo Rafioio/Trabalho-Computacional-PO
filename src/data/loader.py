@@ -2,6 +2,8 @@ import json
 import os
 import re
 
+import numpy as np
+
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _DATA_DIR = os.path.normpath(os.path.join(_HERE, "..", "data"))
 _DAT_PATH = os.path.join(_DATA_DIR, "dados.dat")
@@ -47,8 +49,8 @@ def load_dat(path=None):
     data["w"] = _parse_array(text, "w")
     data["V_tamanho"] = [int(v) for v in _parse_array(text, "V_tamanho")]
 
-    # 2D arrays
-    data["d"] = _parse_2d_array(text, "d")
+    # 2D arrays → numpy
+    data["d"] = np.array(_parse_2d_array(text, "d"), dtype=np.float64)
     data["D"] = _parse_flat_D(text, "D", NumK, NumN)
 
     # V (padded with zeros in .dat, strip to V_tamanho)
@@ -147,7 +149,7 @@ def _parse_flat_D(text, name, NumK, NumN):
     for k in range(NumK):
         start = k * NumN
         D_3d.append(rows[start : start + NumN])
-    return D_3d
+    return np.array(D_3d, dtype=np.float64)
 
 
 def load_json(path=None):
@@ -156,6 +158,7 @@ def load_json(path=None):
     with open(path) as f:
         data = json.load(f)
     _normalize_I_L(data)
+    _arrays_to_numpy(data)
     return data
 
 
@@ -166,6 +169,13 @@ def _normalize_I_L(data):
     if isinstance(data.get("L"), list):
         if data["L"] and isinstance(data["L"][0], (list, tuple)):
             data["L"] = [(x[0], x[1]) for x in data["L"]]
+
+
+def _arrays_to_numpy(data):
+    if isinstance(data.get("d"), list):
+        data["d"] = np.array(data["d"], dtype=np.float64)
+    if isinstance(data.get("D"), list):
+        data["D"] = np.array(data["D"], dtype=np.float64)
 
 
 def save_json(data, path=None):
