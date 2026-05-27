@@ -53,3 +53,4 @@ resumo_cenarios.json
 *.png
 coordenadas.csv
 ultima_semente.txt.ai-jail
+.pytest_cache/

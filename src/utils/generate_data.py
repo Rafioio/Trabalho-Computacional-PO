@@ -107,7 +107,7 @@ def generate_demand_positions(positions, num_q, grid_w, grid_h, d_walk_max, nprn
         else:
             demand_positions[i] = nprng.uniform(0, [grid_w, grid_h])
     np.clip(demand_positions, 0, [grid_w, grid_h], out=demand_positions)
-    demand_levels = np.round(np.random.lognormal(4.0, 0.8, size=num_q)).astype(int)
+    demand_levels = np.round(nprng.lognormal(4.0, 0.8, size=num_q)).astype(int)
     np.clip(demand_levels, 5, 200, out=demand_levels)
     return demand_positions, demand_levels.tolist()
 

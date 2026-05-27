@@ -28,6 +28,7 @@ def build_model(data, domains=None):
     add_c7(model, data, vars)
     add_c8(model, data, vars)
 
+    model.update()
     return model, vars, domains, obj_exprs
 
 
