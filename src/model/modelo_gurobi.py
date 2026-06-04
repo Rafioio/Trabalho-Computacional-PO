@@ -1,6 +1,6 @@
 import gurobipy as gp
 from gurobipy import GRB
-from dados import (
+from src.data.dados import (
     N, Q, K, T, d, de, w, d_walk_max, d_route_max, V, V_tamanho, D, I, L_set, Capt, m_max, P, omega, INF_DIST
 )
 
