@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+*.whl
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+virtualenv/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Solver logs and temp files
+*.log
+cplex.log
+gurobi.log
+*.lp
+*.mps
+*.sav
+*.sol
+*.sdf
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated JSON data (regenerate via loader.py)
+src/data/dados.json
+
+# Generated data files (regenerate via generate_data.py)
+dados_generated.json
+cenario_*.json
+solucao.json
+resumo_cenarios.json
+
+# Exports and artifacts
+*.png
+coordenadas.csv
+ultima_semente.txt.ai-jail
+.pytest_cache/
