@@ -1,5 +1,4 @@
-```python
-readme_content = """# Trabalho-Computacional-PO
+# Trabalho-Computacional-PO
 
 # Projeto SouBuz: Otimização de Pontos de Parada de Ônibus
 
