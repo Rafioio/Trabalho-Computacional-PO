@@ -263,43 +263,34 @@ def draw_accessibility_circle(ax, positions_demand, d_walk_max, style: StyleConf
 def draw_routes_solution(ax, data: Dict[str, Any], solution: Dict[str, Any],
                          positions: List[List[float]], style: StyleConfig):
     """
-    Draw routes as solid lines connecting stops based on solution.
+    Draw routes as solid lines connecting ONLY active stops based on solution.
     """
     V = data.get("V", [])
     if not V:
         return
     
-    # Get active route-stops from solution
-    active_route_stops = set()
-    x_k = solution.get("x_k", {})
-    for key, val in x_k.items():
-        if val > 0.5:
-            if isinstance(key, str) and key.startswith("("):
-                parts = key.strip("()").split(",")
-                if len(parts) == 2:
-                    active_route_stops.add((int(parts[0]), int(parts[1])))
-            elif isinstance(key, (list, tuple)) and len(key) == 2:
-                active_route_stops.add((key[0], key[1]))
+    # Get active stops from solution
+    active_stops = set(solution.get("pontos_ativos", []))
     
-    # Also check x_k_ativos if present (alternative format)
-    x_k_ativos = solution.get("x_k_ativos", [])
-    for item in x_k_ativos:
-        active_route_stops.add((item["n"], item["k"]))
-    
-    # Draw each route
+    # Draw each route, but only connect active stops within the route
     for k_idx, route_nodes in enumerate(V):
         color = style.ROUTE_COLORS[k_idx % len(style.ROUTE_COLORS)]
         
-        # Get coordinates
-        coords = []
-        for node_id in route_nodes:
-            if 1 <= node_id <= len(positions):
-                coords.append(positions[node_id - 1])
+        # Filter to only active stops in this route
+        active_route_nodes = [node_id for node_id in route_nodes if node_id in active_stops]
         
-        if len(coords) >= 2:
-            xs, ys = zip(*coords)
-            ax.plot(xs, ys, color=color, linewidth=style.LINE_WIDTH_ROUTE,
-                   alpha=0.8, zorder=2, solid_capstyle='round')
+        # Only draw if we have at least 2 active stops in this route
+        if len(active_route_nodes) >= 2:
+            # Get coordinates for active nodes
+            coords = []
+            for node_id in active_route_nodes:
+                if 1 <= node_id <= len(positions):
+                    coords.append(positions[node_id - 1])
+            
+            if len(coords) >= 2:
+                xs, ys = zip(*coords)
+                ax.plot(xs, ys, color=color, linewidth=style.LINE_WIDTH_ROUTE,
+                       alpha=0.8, zorder=2, solid_capstyle='round')
 
 
 # ============================================================================
