@@ -232,15 +232,5 @@ Este projeto é de uso acadêmico para a disciplina de Pesquisa Operacional.
 
 ## 👥 Autores
 
-* Desenvolvido como Trabalho Computacional de PO
 """
 
-with open("README.md", "w", encoding="utf-8") as f:
-f.write(readme_content.strip())
-
-```
-O seu ficheiro Markdown configurado e corrigido está pronto.
-
-[file-tag: code-generated-file-0-1780587087312476958]
-
-```
