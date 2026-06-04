@@ -44,10 +44,7 @@ Thumbs.db
 src/data/dados.json
 
 # Generated data files (regenerate via generate_data.py)
-dados_generated.json
-cenario_*.json
-solucao.json
-resumo_cenarios.json
+*.json
 
 # Exports and artifacts
 *.png
