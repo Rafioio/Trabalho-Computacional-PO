@@ -6,7 +6,6 @@ Usage:
     python -m src.run                                    # Auto-detect data file
     python -m src.run --data dados_generated.json        # Load specific JSON
     python -m src.run --data dados_generated.json --json # Force JSON loader
-    python -m src.run --data dados.dat --normalize-weights # With weight normalization
 """
 
 import argparse
@@ -20,12 +19,6 @@ def parse_args():
     parser.add_argument("--data", "-d", default=None, help="Path to .dat or .json file")
     parser.add_argument("--json", action="store_true", help="Force JSON loader (auto-detected by default)")
     parser.add_argument("--no-validate", action="store_true", help="Skip validation")
-    parser.add_argument("--normalize-weights", action="store_true", 
-                       help="Normalize weights via utopia/anti-utopia payoff table")
-    parser.add_argument("--verbose-normalization", action="store_true", 
-                       help="Print payoff table and normalization details")
-    parser.add_argument("--verbose", "-v", action="store_true", 
-                       help="Show Gurobi solver output")
     parser.add_argument("--output", "-o", default="solucao.json",
                        help="Output solution file (default: solucao.json)")
     return parser.parse_args()
@@ -196,42 +189,39 @@ def print_summary(data, results):
         print(f"\nOptimization ended with status: {results['status']}")
         return
     
+    sol = results.get("solution", {})
+    
     print("\n" + "=" * 60)
     print("SOUBUZ - OPTIMAL SOLUTION FOUND")
     print("=" * 60)
     
-    print(f"\n📊 Objective value: {results['obj']:.4f}")
-    print("\n📈 Objective components:")
-    print(f"   f₁ (custo social):            {results['obj_exprs']['f1'].getValue():.2f}")
-    print(f"   f₂ (viabilidade técnica):     {results['obj_exprs']['f2'].getValue():.2f}")
-    print(f"   f₃ (custo infraestrutura):    {results['obj_exprs']['f3'].getValue():.2f}")
-    print(f"   f₄ (penalidade espaçamento):  {results['obj_exprs']['f4'].getValue():.2f}")
+    print(f"\n📊 Função Objetivo Global (F): {results['obj']:.4f}")
+    print(f"   F_usuario (Macro):            {sol.get('F_usuario', 0):.4f}")
+    print(f"   F_operador (Macro):           {sol.get('F_operador', 0):.4f}")
+    
+    print("\n📈 Componentes Individuais:")
+    print(f"   f₁ (custo social):            {sol.get('f1', 0):.2f}")
+    print(f"   f₂ (penalidade espaçamento):  {sol.get('f2', 0):.2f}")
+    print(f"   f₃ (custo infraestrutura):    {sol.get('f3', 0):.2f}")
+    print(f"   f₄ (viabilidade técnica):     {sol.get('f4', 0):.2f}")
     
     print("\n🚌 Route capacities:")
     for k in data["K"]:
-        cap = int(results['vars']["Cap"][k].X)
+        # Garantindo que encontraremos a chave caso ela esteja como string ou int
+        cap = int(sol.get("Cap", {}).get(str(k), 0))
+        if cap == 0 and k in sol.get("Cap", {}):
+            cap = int(sol.get("Cap", {}).get(k, 0))
         print(f"   Rota {k}: {cap} passengers")
     
-    print(f"\n💰 Additional capacity (Cad): {int(results['vars']['Cad'].X)}")
+    print(f"\n💰 Additional capacity (Cad): {int(sol.get('Cad', 0))}")
     
     # Active stops
-    active_stops = [n for n in data["N"] if results['vars']["x"][n].X > 0.5]
+    active_stops = sol.get("pontos_ativos", [])
     print(f"\n📍 Active stops: {len(active_stops)}/{data['NumN']}")
     if active_stops:
         print(f"   IDs: {active_stops[:20]}")
         if len(active_stops) > 20:
             print(f"   ... and {len(active_stops) - 20} more")
-    
-    # Active route-stops
-    active_route_stops = [(n, k) for (n, k) in data["I"] 
-                          if results['vars']["x_k"][n, k].X > 0.5]
-    print(f"\n🚏 Active route-stops: {len(active_route_stops)}")
-    
-    # Utilization statistics
-    total_capacity = sum(results['vars']["Cap"][k].X for k in data["K"])
-    total_demand = sum(data["de"])
-    utilization = (total_demand / total_capacity * 100) if total_capacity > 0 else 0
-    print(f"\n📊 System utilization: {utilization:.1f}% (demand {total_demand:.0f} / capacity {total_capacity:.0f})")
 
 
 def main():
@@ -271,20 +261,19 @@ def main():
     else:
         print("⚠ Validation skipped.")
     
-    # ---- Weight normalization ----
-    print("\n[3/4] Setting up objective function...")
-    if args.normalize_weights:
-        try:
-            from src.utils.weight_normalizer import normalize_weights
-            print("Normalizing weights via utopia/anti-utopia payoff table...")
-            normalize_weights(data, verbose=args.verbose_normalization)
-            fac = data["_normalization"]["factors"]
-            print(f"✓ Normalization factors: f1={fac[0]:.6f}  f2={fac[1]:.6f}  f3={fac[2]:.6f}  f4={fac[3]:.6f}")
-            print(f"  Post-normalization weights: W1={data['W1']:.6f}  W2={data['W2']:.6f}  W3={data['W3']:.6f}  W4={data['W4']:.6f}")
-        except ImportError:
-            print("⚠ Weight normalizer module not found, using raw weights.")
-    else:
-        print(f"Using raw weights: W1={data['W1']:.2f}, W2={data['W2']:.2f}, W3={data['W3']:.2f}, W4={data['W4']:.2f}")
+    # ---- Otimização Preliminar (Min-Max) ----
+    print("\n[3/4] Configurando Macro-Objetivos (Normalização Min-Max)...")
+    try:
+        from src.model.function_normalizer import normalize_function
+        print("Executando otimizações isoladas para achar Mínimos e Máximos (Aguarde)...")
+        normalize_function(data, verbose=True)
+        print(f"✓ Limites f1: {data.get('f1_min', 0):.2f} a {data.get('f1_max', 1):.2f}")
+        print(f"✓ Limites f2: {data.get('f2_min', 0):.2f} a {data.get('f2_max', 1):.2f}")
+        print(f"✓ Limites f3: {data.get('f3_min', 0):.2f} a {data.get('f3_max', 1):.2f}")
+        print(f"✓ Limites f4: {data.get('f4_min', 0):.2f} a {data.get('f4_max', 1):.2f}")
+    except ImportError as e:
+        print(f"⚠ Erro ao importar.function_normalizer: {e}")
+        sys.exit(1)
     
     # ---- Solve ----
     print("\n[4/4] Solving optimization model...")
@@ -292,8 +281,8 @@ def main():
     
     from src.model.solver import build_and_solve
     
-    # Set verbose based on args
-    results = build_and_solve(data, verbose=args.verbose)
+    # Forçar verbose=True para sempre exibir os logs do Gurobi
+    results = build_and_solve(data, verbose=True)
     
     # ---- Results ----
     if results["status"] == "optimal":

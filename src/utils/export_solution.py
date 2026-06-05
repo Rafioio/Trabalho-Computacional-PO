@@ -48,9 +48,10 @@ def export_solution(results, data, domains=None, path=None):
         "capacidade_adicional": int(v["Cad"].X),
         "objetivos": {
             "f1_custo_social": round(float(obj_exprs["f1"].getValue()), 2),
-            "f2_viabilidade_tecnica": round(float(obj_exprs["f2"].getValue()), 2),
+            "f2_penalidade_espacamento": round(float(obj_exprs["f2"].getValue()), 2),
             "f3_custo_infraestrutura": round(float(obj_exprs["f3"].getValue()), 2),
-            "f4_penalidade_espacamento": round(float(obj_exprs["f4"].getValue()), 2),
+            "f4_viabilidade_tecnica": round(float(obj_exprs["f4"].getValue()), 2),
+            
         },
         "atribuicao_demanda": demand_assignment,
     }

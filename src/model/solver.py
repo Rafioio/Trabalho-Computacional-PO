@@ -32,7 +32,7 @@ def build_model(data, domains=None):
 
     model = gp.Model("soubuz")
     model.Params.OutputFlag = 0
-
+    model.Params.NonConvex = 2 
     vars_dict = create_variables(model, data, domains)
     obj_exprs = build_objective_exprs(data, vars_dict, domains)
     
@@ -62,6 +62,7 @@ def build_and_solve(data, verbose=True):
         Dictionary with results
     """
     model, vars_dict, domains, obj_exprs = build_model(data)
+    obj_exprs = build_objective(model, data, vars_dict, domains)
     build_objective(model, data, vars_dict, domains)
     
     if verbose:
@@ -93,6 +94,8 @@ def build_and_solve(data, verbose=True):
             "f2": obj_exprs["f2"].getValue(),
             "f3": obj_exprs["f3"].getValue(),
             "f4": obj_exprs["f4"].getValue(),
+            "F_usuario": obj_exprs["F_usuario"].getValue(),
+            "F_operador": obj_exprs["F_operador"].getValue(),
         }
         
     elif model.status == GRB.INFEASIBLE:
@@ -159,13 +162,16 @@ def solve_from_file(filepath, verbose=True):
         Dictionary with results
     """
     from src.data.loader import load_data
-    
+    from src.model.function_normalizer import normalize_function
+
     print(f"\nLoading data from: {filepath}")
     data = load_data(filepath)
     
     print(f"Data loaded: {data['NumN']} nodes, {data['NumK']} routes, {data['NumQ']} demand zones")
     print(f"Total demand: {sum(data['de']):.0f} passengers")
     
+    normalize_function(data, verbose=verbose)
+
     return build_and_solve(data, verbose)
 
 
@@ -180,15 +186,26 @@ if __name__ == "__main__":
     results = solve_from_file(filepath, verbose=True)
     
     if results["status"] == "optimal":
-        print(f"\n{'='*60}")
-        print(f"SOLUTION FOUND!")
-        print(f"{'='*60}")
-        print(f"Objective value: {results['obj']:.4f}")
-        print(f"  - f1 (social cost): {results['solution']['f1']:.4f}")
-        print(f"  - f2 (technical feasibility): {results['solution']['f2']:.4f}")
-        print(f"  - f3 (infrastructure cost): {results['solution']['f3']:.4f}")
-        print(f"  - f4 (spacing penalty): {results['solution']['f4']:.4f}")
-        print(f"\nActive stops: {len(results['solution']['pontos_ativos'])}")
-        print(f"Additional capacity (Cad): {results['solution']['Cad']:.0f}")
+        sol = results["solution"]
+        
+        print("\n" + "="*60)
+        print("OTIMIZAÇÃO CONCLUÍDA COM SUCESSO (Solução Ótima Encontrada)")
+        print("="*60)
+        print(f"Função Objetivo Global (F): {results['obj']:.4f}")
+        print(f"  - F_usuario (Macro):      {sol['F_usuario']:.4f}")
+        print(f"  - F_operador (Macro):     {sol['F_operador']:.4f}")
+        print("-" * 60)
+        print(f"  - f1 (Custo Social):                {sol['f1']:.4f}")
+        print(f"  - f2 (Penalidade de Espaçamento):   {sol['f2']:.4f}")
+        print(f"  - f3 (Custo de Infraestrutura):     {sol['f3']:.4f}")
+        print(f"  - f4 (Viabilidade Técnica):         {sol['f4']:.4f}")
+        
+        print("\nDimensionamento da Capacidade por Rota:")
+        for k in sol['Cap'].keys():  # <--- LOOP CORRIGIDO
+            print(f" - Rota {k}: {sol['Cap'][k]:.0f} ônibus alocados")
+            
+        print(f"\nAlocação Extraordinária (Cad): {sol['Cad']:.0f} ônibus")
+        print(f"Pontos Ativados no Total: {len(sol['pontos_ativos'])}")
+        print("="*60)
         
         save_solution(results)
