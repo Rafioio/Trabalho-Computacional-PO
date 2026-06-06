@@ -120,12 +120,6 @@ python -m src.run
 # Executar com arquivo específico
 python -m src.run --data dados_generated.json
 
-# Executar com normalização de pesos (utopia/anti-utopia)
-python -m src.run --data dados_generated.json --normalize-weights
-
-# Executar com saída detalhada do Gurobi
-python -m src.run --data dados_generated.json -v
-
 # Definir arquivo de saída da solução
 python -m src.run --data dados_generated.json --output minha_solucao.json
 

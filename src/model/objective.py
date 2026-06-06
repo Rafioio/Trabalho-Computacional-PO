@@ -47,8 +47,8 @@ def build_objective(model, data, vars, domains):
     W3 = data.get("W3", 0.5)
     W4 = data.get("W4", 0.5)
     
-    mu = data.get("mu", 0.5)
-    theta = data.get("theta", 0.5)
+    mu = data.get("mu", 1)
+    theta = data.get("theta", 1)
     
     # 2. Recupera os limites de normalização calculados pelo weight_normalizer.py
     f1_min, f1_max = data.get("f1_min", 0.0), data.get("f1_max", 1.0)

@@ -195,6 +195,32 @@ def print_summary(data, results):
     print("SOUBUZ - OPTIMAL SOLUTION FOUND")
     print("=" * 60)
     
+    # Função auxiliar para calcular a nota normalizada na hora de exibir
+    def get_norm(val, f_min, f_max):
+        den = f_max - f_min
+        if den < 1e-6: return 0.0
+        return (val - f_min) / den
+
+    n1 = get_norm(sol.get('f1', 0), data.get('f1_min', 0), data.get('f1_max', 1))
+    n2 = get_norm(sol.get('f2', 0), data.get('f2_min', 0), data.get('f2_max', 1))
+    n3 = get_norm(sol.get('f3', 0), data.get('f3_min', 0), data.get('f3_max', 1))
+    n4 = get_norm(sol.get('f4', 0), data.get('f4_min', 0), data.get('f4_max', 1))
+
+    print("\n📈 Componentes Individuais (Valor Bruto  ->  Nota Normalizada [0 a 1]):")
+    print(f"   f₁ (custo social):            {sol.get('f1', 0):10.2f}  ->  [{n1:.4f}]")
+    print(f"   f₂ (penalidade espaçamento):  {sol.get('f2', 0):10.2f}  ->  [{n2:.4f}]")
+    print(f"   f₃ (custo infraestrutura):    {sol.get('f3', 0):10.2f}  ->  [{n3:.4f}]")
+    print(f"   f₄ (viabilidade técnica):     {sol.get('f4', 0):10.2f}  ->  [{n4:.4f}]")
+
+    # ---- Print dos Parâmetros ----
+    print("\n⚙️ Parâmetros de Decisão Carregados:")
+    print(f"   W1 (Peso F1):              {data.get('W1', 'Não definido')}")
+    print(f"   W2 (Peso F2):              {data.get('W2', 'Não definido')}")
+    print(f"   W3 (Peso F3):              {data.get('W3', 'Não definido')}")
+    print(f"   W4 (Peso F4):              {data.get('W4', 'Não definido')}")
+    print(f"   mu (Peso F_usuario):       {data.get('mu', 'Não definido')}")
+    print(f"   theta (Peso F_operador):   {data.get('theta', 'Não definido')}")
+
     print(f"\n📊 Função Objetivo Global (F): {results['obj']:.4f}")
     print(f"   F_usuario (Macro):            {sol.get('F_usuario', 0):.4f}")
     print(f"   F_operador (Macro):           {sol.get('F_operador', 0):.4f}")
