@@ -34,6 +34,7 @@ def build_model(data, domains=None):
     model.Params.OutputFlag = 0
     model.Params.NonConvex = 2
     model.Params.MIPGap = 0.01
+    model.Params.TimeLimit = 10800
     vars_dict = create_variables(model, data, domains)
     obj_exprs = build_objective_exprs(data, vars_dict, domains)
     
