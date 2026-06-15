@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from src.utils.generate_data import parse_args, generate_single, generate_quality
+from src.utils.generate_data import parse_args, generate_data, generate_quality
 
 
 @pytest.fixture
@@ -22,7 +22,7 @@ def default_args():
 class TestGenerateData:
     def test_default_output_shape(self, default_args):
         rng = np.random.default_rng(42)
-        data = generate_single(default_args, 42, rng, quiet=True)
+        data = generate_data(default_args, rng, 42)
         assert data["NumN"] == 30
         assert data["NumK"] == 3
         assert data["NumQ"] == 5
@@ -32,13 +32,13 @@ class TestGenerateData:
 
     def test_centroid_sets_are_disjoint(self, default_args):
         rng = np.random.default_rng(42)
-        data = generate_single(default_args, 42, rng, quiet=True)
+        data = generate_data(default_args, rng, 42)
         assert len(data["C"]) + len(data["T"]) == data["NumN"]
         assert set(data["C"]).isdisjoint(set(data["T"]))
 
     def test_route_structure(self, default_args):
         rng = np.random.default_rng(42)
-        data = generate_single(default_args, 42, rng, quiet=True)
+        data = generate_data(default_args, rng, 42)
         assert len(data["V"]) == data["NumK"]
         assert len(data["V_tamanho"]) == data["NumK"]
         for k in range(data["NumK"]):
@@ -47,7 +47,7 @@ class TestGenerateData:
 
     def test_I_pairs_integrity(self, default_args):
         rng = np.random.default_rng(42)
-        data = generate_single(default_args, 42, rng, quiet=True)
+        data = generate_data(default_args, rng, 42)
         for n, k in data["I"]:
             assert 1 <= n <= data["NumN"]
             assert 1 <= k <= data["NumK"]
@@ -56,7 +56,7 @@ class TestGenerateData:
 
     def test_L_pairs_integrity(self, default_args):
         rng = np.random.default_rng(42)
-        data = generate_single(default_args, 42, rng, quiet=True)
+        data = generate_data(default_args, rng, 42)
         for q, k in data["L"]:
             assert 1 <= q <= data["NumQ"]
             assert 1 <= k <= data["NumK"]
@@ -65,19 +65,19 @@ class TestGenerateData:
 
     def test_d_matrix_shape(self, default_args):
         rng = np.random.default_rng(42)
-        data = generate_single(default_args, 42, rng, quiet=True)
+        data = generate_data(default_args, rng, 42)
         d = np.array(data["d"])
         assert d.shape == (data["NumQ"], data["NumN"])
 
     def test_D_matrix_shape(self, default_args):
         rng = np.random.default_rng(42)
-        data = generate_single(default_args, 42, rng, quiet=True)
+        data = generate_data(default_args, rng, 42)
         D = np.array(data["D"])
         assert D.shape == (data["NumK"], data["NumN"], data["NumN"])
 
     def test_de_and_w_lengths(self, default_args):
         rng = np.random.default_rng(42)
-        data = generate_single(default_args, 42, rng, quiet=True)
+        data = generate_data(default_args, rng, 42)
         assert len(data["de"]) == data["NumQ"]
         assert len(data["w"]) == data["NumN"]
 
@@ -88,7 +88,7 @@ class TestGenerateData:
 
     def test_metadata_present(self, default_args):
         rng = np.random.default_rng(42)
-        data = generate_single(default_args, 42, rng, quiet=True)
+        data = generate_data(default_args, rng, 42)
         assert "metadata" in data
         assert "visualizacao" in data
         assert "estatisticas" in data
@@ -96,7 +96,7 @@ class TestGenerateData:
 
     def test_scalars_present(self, default_args):
         rng = np.random.default_rng(42)
-        data = generate_single(default_args, 42, rng, quiet=True)
+        data = generate_data(default_args, rng, 42)
         for key in ("P", "omega", "W1", "W2", "W3", "W4", "Capt", "m_max",
                      "d_route_max", "d_walk_max", "NumN", "NumK", "NumQ"):
             assert key in data, f"Missing scalar: {key}"
@@ -106,8 +106,8 @@ class TestGenerateData:
         rng2 = np.random.default_rng(99)
         args = parse_args(["--num-n", "10", "--num-k", "2", "--num-q", "3",
                             "--seed", "99", "--output", "/dev/null", "--quiet"])
-        d1 = generate_single(args, 99, rng1, quiet=True)
-        d2 = generate_single(args, 99, rng2, quiet=True)
+        d1 = generate_data(args, rng1, 99)
+        d2 = generate_data(args, rng2, 99)
         assert d1["de"] == d2["de"]
         assert d1["d"] == d2["d"]
         assert d1["V"] == d2["V"]
@@ -115,7 +115,7 @@ class TestGenerateData:
 
     def test_route_nodes_in_I(self, default_args):
         rng = np.random.default_rng(42)
-        data = generate_single(default_args, 42, rng, quiet=True)
+        data = generate_data(default_args, rng, 42)
         for k_idx, route in enumerate(data["V"]):
             for n in route:
                 assert (n, k_idx + 1) in data["I"], (
@@ -123,7 +123,7 @@ class TestGenerateData:
 
     def test_terminal_nodes_in_I(self, default_args):
         rng = np.random.default_rng(42)
-        data = generate_single(default_args, 42, rng, quiet=True)
+        data = generate_data(default_args, rng, 42)
         for k_idx, route in enumerate(data["V"]):
             k = k_idx + 1
             assert (route[0], k) in data["I"], f"First terminal {route[0]} not in I"
@@ -131,12 +131,12 @@ class TestGenerateData:
 
     def test_no_duplicate_nodes_in_route(self, default_args):
         rng = np.random.default_rng(42)
-        data = generate_single(default_args, 42, rng, quiet=True)
+        data = generate_data(default_args, rng, 42)
         for route in data["V"]:
             assert len(route) == len(set(route)), "Duplicate node in route V"
 
     def test_each_demand_zone_in_at_least_one_L(self, default_args):
         rng = np.random.default_rng(42)
-        data = generate_single(default_args, 42, rng, quiet=True)
+        data = generate_data(default_args, rng, 42)
         served = {q for q, k in data["L"]}
         assert served == set(data["Q"]), "Not all demand zones in L"

@@ -63,7 +63,6 @@ def build_and_solve(data, verbose=True):
     """
     model, vars_dict, domains, obj_exprs = build_model(data)
     obj_exprs = build_objective(model, data, vars_dict, domains)
-    build_objective(model, data, vars_dict, domains)
     
     if verbose:
         model.Params.OutputFlag = 1
@@ -150,7 +149,7 @@ def save_solution(results, output_path="solucao.json"):
 
 
 # For backward compatibility
-def solve_from_file(filepath, verbose=True):
+def solve_from_file(filepath, verbose=True, normalize=True):
     """
     Load data from file and solve the model.
     
@@ -170,7 +169,8 @@ def solve_from_file(filepath, verbose=True):
     print(f"Data loaded: {data['NumN']} nodes, {data['NumK']} routes, {data['NumQ']} demand zones")
     print(f"Total demand: {sum(data['de']):.0f} passengers")
     
-    normalize_function(data, verbose=verbose)
+    if normalize:
+        normalize_function(data, verbose=verbose)
 
     return build_and_solve(data, verbose)
 

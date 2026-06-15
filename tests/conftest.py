@@ -7,7 +7,7 @@ import tempfile
 import numpy as np
 import pytest
 
-from src.utils.generate_data import generate_single, parse_args
+from src.utils.generate_data import generate_data, parse_args
 
 
 @pytest.fixture(scope="session")
@@ -27,7 +27,7 @@ def small_data(small_args):
     """Small deterministic dataset (10 nodes, 2 routes, 3 zones)."""
     import numpy as np
     rng = np.random.default_rng(42)
-    return generate_single(small_args, 42, rng, quiet=True)
+    return generate_data(small_args, rng, 42)
 
 
 @pytest.fixture(scope="session")

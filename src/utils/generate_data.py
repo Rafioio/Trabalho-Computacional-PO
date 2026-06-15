@@ -524,11 +524,23 @@ def generate_data(args, rng, seed):
     return data
 
 
+def generate_single(args, seed, rng, quiet=False):
+    """Wrapper for generate_data that matches old API (used by tests)."""
+    data = generate_data(args, rng, seed)
+    if not quiet:
+        stats = data["estatisticas"]
+        print(f"\nSummary:")
+        print(f"  Nodes: {data['NumN']}, Routes: {data['NumK']}, Demand zones: {data['NumQ']}")
+        print(f"  Total demand: {stats['demanda_total']:.0f}")
+        print(f"  Average quality: {stats['qualidade_media']:.3f}")
+    return data
+
+
 # ============================================================================
 # INTERFACE DE LINHA DE COMANDO
 # ============================================================================
 
-def parse_args():
+def parse_args(args=None):
     parser = argparse.ArgumentParser(description="Generate synthetic SouBuz data")
     parser.add_argument("--seed", type=int, default=None, help="Random seed")
     parser.add_argument("--num-n", type=int, default=DEFAULT_NUM_N, help="Number of nodes")
@@ -551,9 +563,11 @@ def parse_args():
     parser.add_argument("--W2", type=float, default=DEFAULT_W2, help="Weight for technical feasibility")
     parser.add_argument("--W3", type=float, default=DEFAULT_W3, help="Weight for infrastructure cost")
     parser.add_argument("--W4", type=float, default=DEFAULT_W4, help="Weight for spacing penalty")
+    parser.add_argument("--scenarios", type=int, default=None, help="Batch-generate N scenarios")
+    parser.add_argument("--prefix", default="cenario", help="Filename prefix for batch mode")
     parser.add_argument("--output", "-o", default="dados_generated.json", help="Output JSON file")
     parser.add_argument("--quiet", action="store_true", help="Suppress output")
-    return parser.parse_args()
+    return parser.parse_args(args)
 
 
 def main():

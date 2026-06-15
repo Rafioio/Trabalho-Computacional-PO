@@ -55,10 +55,13 @@ pip install -r requirements.txt
 **Arquivo `requirements.txt`:**
 
 ```text
-numpy>=1.24.0
-matplotlib>=3.7.0
-scipy>=1.10.0
-gurobipy>=10.0.0
+gurobipy>=11.0
+numpy>=1.24
+pandas>=2.0
+matplotlib>=3.7
+openpyxl>=3.1
+pytest>=7.0
+scipy>=1.10
 
 ```
 
@@ -75,13 +78,13 @@ src/
 │   ├── variables.py       # Definição das variáveis de decisão
 │   ├── objective.py       # Função objetivo (f1-f4)
 │   ├── constraints.py     # Restrições do modelo (8 grupos)
-│   └── solver.py          # Montagem e otimização
+│   ├── solver.py          # Montagem e otimização
+│   └── function_normalizer.py # Normalização Min-Max utopia/anti-utopia
 ├── scripts/
 │   └── map_viewer.py      # Visualização de cenários e soluções
 ├── utils/
 │   ├── generate_data.py   # Gerador de dados sintéticos realistas
 │   ├── validator.py       # Validação de consistência dos dados
-│   ├── weight_normalizer.py # Normalização utopia/anti-utopia
 │   └── export_solution.py # Exportação de resultados (→ solucao.json)
 └── run.py                 # Ponto de entrada principal
 
@@ -94,7 +97,7 @@ src/
 Para testar o modelo sem dados reais, utilize o gerador de dados sintéticos:
 
 ```bash
-# Gerar dados com configuração padrão (50 nós, 5 rotas, 35 zonas)
+# Gerar dados com configuração padrão (200 nós, 2 rotas, 70 zonas)
 python src/utils/generate_data.py
 
 # Gerar dados personalizados
@@ -176,37 +179,37 @@ python src/scripts/map_viewer.py dados_generated.json --solution solucao.json --
 
 | Parâmetro | Descrição | Padrão |
 | --- | --- | --- |
-| `--num-n` | Número de pontos candidatos | 50 |
-| `--num-k` | Número de rotas | 5 |
-| `--num-q` | Número de zonas de demanda | 35 |
+| `--num-n` | Número de pontos candidatos | 200 |
+| `--num-k` | Número de rotas | 2 |
+| `--num-q` | Número de zonas de demanda | 70 |
 | `--route-len` | Nós por rota | ~35% de NumN |
 | `--grid-width/height` | Dimensões da cidade (m) | 3000 x 3000 |
 | `--min-dist` | Distância mínima entre pontos (m) | 80 |
-| `--d-walk-max` | Distância máxima de caminhada (m) | 500 |
+| `--d-walk-max` | Distância máxima de caminhada (m) | 400 |
 | `--d-route-max` | Distância máxima entre paradas (m) | 800 |
 | `--capt` | Capacidade base do sistema | 800 |
-| `--m-max` | Máximo de rotas por ponto | 3 |
+| `--m-max` | Máximo de rotas por ponto | 7 |
 | `--route-method` | Método de geração de rotas | hybrid |
 
 ### Pesos da Função Objetivo
 
 | Parâmetro | Descrição | Padrão |
 | --- | --- | --- |
-| `--W1` | Peso do custo social (f1) | 0.35 |
-| `--W2` | Peso da viabilidade técnica (f2) | 0.15 |
-| `--W3` | Peso do custo de infraestrutura (f3) | 0.30 |
-| `--W4` | Peso da penalidade de espaçamento (f4) | 0.20 |
+| `--W1` | Peso do custo social (f1) | 1 |
+| `--W2` | Peso da penalidade de espaçamento (f2) | 1 |
+| `--W3` | Peso do custo de infraestrutura (f3) | 1 |
+| `--W4` | Peso da viabilidade técnica (f4) | 1 |
 
-> ⚠️ **Observação:** Os pesos devem somar 1.0. É recomendado usar `--normalize-weights` para normalização automática via matriz payoff utopia/anti-utopia.
+> ⚠️ **Observação:** A normalização Min-Max é aplicada automaticamente via matriz payoff utopia/anti-utopia antes da otimização, tornando as funções comparáveis independentemente da escala.
 
 ## 📈 Interpretação dos Resultados
 
 ### Função Objetivo
 
 * **f1 (custo social):** Distância total caminhada + penalidades por demanda não atendida
-* **f2 (viabilidade técnica):** Soma do inverso da qualidade dos pontos ativos (menor é melhor)
+* **f2 (penalidade de espaçamento):** Soma das folgas (slack) para violações do espaçamento máximo entre paradas consecutivas
 * **f3 (custo infraestrutura):** Número de pontos ativos + custo de capacidade adicional
-* **f4 (penalidade de espaçamento):** Violações do espaçamento máximo entre paradas
+* **f4 (viabilidade técnica):** Soma do inverso da qualidade dos pontos ativos ponderada pela capacidade alocada
 
 ### Visualização
 
@@ -227,14 +230,3 @@ Este projeto é de uso acadêmico para a disciplina de Pesquisa Operacional.
 ## 👥 Autores
 
 * Desenvolvido como Trabalho Computacional de PO
-"""
-
-with open("README.md", "w", encoding="utf-8") as f:
-f.write(readme_content.strip())
-
-```
-O seu ficheiro Markdown configurado e corrigido está pronto.
-
-[file-tag: code-generated-file-0-1780587087312476958]
-
-```

@@ -16,9 +16,9 @@ class TestObjective:
         model, vars, domains, obj_exprs = built_model
         assert isinstance(obj_exprs["f3"], gp.LinExpr), "f3 should be LinExpr"
 
-    def test_f4_is_lin_expr(self, built_model):
+    def test_f4_is_quad_expr(self, built_model):
         model, vars, domains, obj_exprs = built_model
-        assert isinstance(obj_exprs["f4"], gp.LinExpr), "f4 should be LinExpr"
+        assert isinstance(obj_exprs["f4"], gp.QuadExpr), "f4 should be QuadExpr (x_k * Cap[k])"
 
     def test_all_four_objectives_present(self, built_model):
         model, vars, domains, obj_exprs = built_model
