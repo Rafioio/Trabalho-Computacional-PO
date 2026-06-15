@@ -89,6 +89,9 @@ def validate(data):
         vt = V_tamanho[k_idx]
         if vt < 1:
             continue
+        if len(V[k_idx]) < vt:
+            errors.append(f"V[{k_idx}] len ({len(V[k_idx])}) < V_tamanho ({vt})")
+            continue
         first = V[k_idx][0]
         last = V[k_idx][vt - 1]
         if (first, k_idx + 1) not in I:

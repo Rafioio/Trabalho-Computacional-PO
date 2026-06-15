@@ -6,6 +6,9 @@ This module generates realistic synthetic data for testing the bus stop
 optimization model, including node positions, demand zones, routes, and
 all necessary parameters for the Gurobi solver.
 
+IMPORTANT: Every candidate node belongs to at least one route.
+Nodes can belong to multiple routes (intersections are allowed).
+
 Usage:
     python generate_data.py                              # Default: 50 nodes, 5 routes, 35 zones
     python generate_data.py --num-n 500 --num-k 10 --num-q 30
@@ -29,22 +32,24 @@ from scipy.spatial import KDTree
 # ============================================================================
 
 DEFAULT_NUM_N = 200
-DEFAULT_NUM_K = 2
-DEFAULT_NUM_Q = 70
+DEFAULT_NUM_K = 3
+DEFAULT_NUM_Q = 60
 DEFAULT_GRID_WIDTH = 3000.0
 DEFAULT_GRID_HEIGHT = 3000.0
 DEFAULT_MIN_DIST = 80.0
-DEFAULT_D_WALK_MAX = 400.0
-DEFAULT_D_ROUTE_MAX = 800.0
+DEFAULT_D_WALK_MAX = 250.0
+DEFAULT_D_ROUTE_MAX = 1000.0
 DEFAULT_P = 1000.0
 DEFAULT_CAPT = 800
-DEFAULT_M_MAX = 7
-DEFAULT_OMEGA = 0.033
-DEFAULT_W1 = 1
-DEFAULT_W2 = 1
-DEFAULT_W3 = 1
-DEFAULT_W4 = 1
+DEFAULT_M_MAX = 3
+DEFAULT_OMEGA = 50.0
+DEFAULT_W1 = 0.35
+DEFAULT_W2 = 0.15
+DEFAULT_W3 = 0.30
+DEFAULT_W4 = 0.20
 DEFAULT_ROUTE_LEN_FRAC = 0.35
+# Probability of a node belonging to multiple routes
+DEFAULT_MULTI_ROUTE_PROB = 0.3
 
 
 # ============================================================================
@@ -108,208 +113,8 @@ def generate_quality(num_n, rng):
 
 
 # ============================================================================
-# NOVA FUNÇÃO: GERAÇÃO DE ROTAS REALISTAS (VIZINHO MAIS PRÓXIMO)
+# FUNÇÕES DE GERAÇÃO DE ROTAS COM INTERSEÇÕES (MULTIPLAS ROTAS POR PONTO)
 # ============================================================================
-
-def generate_realistic_routes(positions: np.ndarray, num_k: int, route_len: int, rng) -> Tuple[List[List[int]], List[np.ndarray]]:
-    """
-    Generate realistic routes using Nearest Neighbor algorithm.
-    
-    Each route starts at a random point and then repeatedly visits the
-    nearest unvisited point, creating a geographically coherent path.
-    
-    Args:
-        positions: Array of node positions (N x 2)
-        num_k: Number of routes to generate
-        route_len: Number of nodes per route
-        rng: Random number generator
-        
-    Returns:
-        routes: List of routes (each as list of node IDs, 1-indexed)
-        route_indices: List of routes (each as array of indices, 0-indexed)
-    """
-    num_n = len(positions)
-    routes = []
-    route_indices = []
-    used_nodes = set()
-    
-    # Build KDTree for efficient nearest neighbor queries
-    tree = KDTree(positions)
-    
-    for k in range(num_k):
-        # Find available starting points (not used in previous routes)
-        available = [i for i in range(num_n) if i not in used_nodes]
-        if not available:
-            # If not enough available, reuse nodes (allow overlapping routes)
-            available = list(range(num_n))
-        
-        # Random starting point
-        start_idx = rng.choice(available)
-        route = [start_idx]
-        used_nodes.add(start_idx)
-        
-        # Build route using nearest neighbor
-        current = start_idx
-        for _ in range(route_len - 1):
-            # Find neighbors of current point
-            distances, indices = tree.query(positions[current], k=min(15, num_n))
-            
-            # Find nearest unvisited point
-            next_idx = None
-            for idx in indices:
-                if idx not in used_nodes and idx != current:
-                    next_idx = idx
-                    break
-            
-            if next_idx is None:
-                # No unvisited neighbors, pick any unvisited point
-                remaining = [i for i in range(num_n) if i not in used_nodes]
-                if remaining:
-                    next_idx = rng.choice(remaining)
-                else:
-                    break
-            
-            route.append(next_idx)
-            used_nodes.add(next_idx)
-            current = next_idx
-        
-        # Store route (convert to 1-indexed for output)
-        routes.append([int(n + 1) for n in route])
-        route_indices.append(np.array(route))
-    
-    return routes, route_indices
-
-
-def generate_grid_routes(positions: np.ndarray, num_k: int, route_len: int, rng) -> Tuple[List[List[int]], List[np.ndarray]]:
-    """
-    Alternative: Generate routes by dividing the city into sectors.
-    Each route covers a specific geographic region.
-    """
-    num_n = len(positions)
-    routes = []
-    route_indices = []
-    
-    # Sort points by X coordinate to create vertical strips
-    sorted_indices = np.argsort(positions[:, 0])
-    
-    # Divide points into num_k groups (roughly equal)
-    points_per_route = max(route_len, num_n // num_k)
-    
-    for k in range(num_k):
-        start = k * points_per_route
-        end = min(start + points_per_route, num_n)
-        
-        if start >= num_n:
-            # If not enough points, reuse from beginning with offset
-            start = (k * route_len) % num_n
-            end = start + route_len
-        
-        # Get indices for this sector
-        sector_indices = sorted_indices[start:end]
-        
-        # Sort within sector by Y coordinate to create path
-        if len(sector_indices) > 0:
-            sector_positions = positions[sector_indices]
-            sorted_by_y = np.argsort(sector_positions[:, 1])
-            route = sector_indices[sorted_by_y].tolist()
-            
-            # Ensure route has correct length
-            if len(route) > route_len:
-                route = route[:route_len]
-            
-            routes.append([int(n + 1) for n in route])
-            route_indices.append(np.array(route))
-    
-    return routes, route_indices
-
-
-def generate_hybrid_routes(positions: np.ndarray, num_k: int, route_len: int, rng) -> Tuple[List[List[int]], List[np.ndarray]]:
-    """
-    Hybrid approach: combine Nearest Neighbor with geographic clustering.
-    Creates routes that are locally coherent but cover different regions.
-    """
-    num_n = len(positions)
-    routes = []
-    route_indices = []
-    
-    # Use K-Means-like approach: find centroids of clusters
-    from scipy.spatial import KDTree
-    from scipy.cluster.vq import kmeans2
-    
-    # Find cluster centers (approximate regions)
-    if num_n >= num_k:
-        centroids, labels = kmeans2(positions, num_k, minit='points', seed=rng)
-    else:
-        # Not enough points, use simple division
-        return generate_grid_routes(positions, num_k, route_len, rng)
-    
-    # For each cluster, build a route using nearest neighbor within the cluster
-    for cluster_id in range(num_k):
-        # Get points belonging to this cluster
-        cluster_indices = np.where(labels == cluster_id)[0]
-        
-        if len(cluster_indices) == 0:
-            continue
-        
-        # If cluster has too few points, expand to nearest neighbors
-        if len(cluster_indices) < route_len:
-            # Find nearest points from other clusters
-            tree = KDTree(positions)
-            needed = route_len - len(cluster_indices)
-            
-            # Collect all points in cluster
-            current_set = set(cluster_indices)
-            
-            # Add nearest points iteratively
-            for _ in range(needed):
-                # Find point outside cluster closest to any point in cluster
-                best_idx = None
-                best_dist = float('inf')
-                for idx in current_set:
-                    distances, neighbors = tree.query(positions[idx], k=min(10, num_n))
-                    for n_idx, dist in zip(neighbors, distances):
-                        if n_idx not in current_set and dist < best_dist:
-                            best_dist = dist
-                            best_idx = n_idx
-                if best_idx is not None:
-                    current_set.add(best_idx)
-            
-            cluster_indices = list(current_set)
-        
-        # Build route within cluster using nearest neighbor
-        if len(cluster_indices) >= 2:
-            route = build_route_from_points(positions, cluster_indices, rng)
-        else:
-            route = cluster_indices
-        
-        # Trim or pad to exact length
-        if len(route) > route_len:
-            route = route[:route_len]
-        elif len(route) < route_len:
-            # Pad with nearest points
-            current_set = set(route)
-            tree = KDTree(positions)
-            while len(route) < route_len:
-                # Add nearest neighbor to any point in route
-                best_idx = None
-                best_dist = float('inf')
-                for idx in route:
-                    distances, neighbors = tree.query(positions[idx], k=min(10, num_n))
-                    for n_idx, dist in zip(neighbors, distances):
-                        if n_idx not in current_set and dist < best_dist:
-                            best_dist = dist
-                            best_idx = n_idx
-                if best_idx is not None:
-                    route.append(best_idx)
-                    current_set.add(best_idx)
-                else:
-                    break
-        
-        routes.append([int(n + 1) for n in route])
-        route_indices.append(np.array(route))
-    
-    return routes, route_indices
-
 
 def build_route_from_points(positions: np.ndarray, indices: List[int], rng) -> List[int]:
     """Build a route from a set of points using nearest neighbor."""
@@ -323,7 +128,6 @@ def build_route_from_points(positions: np.ndarray, indices: List[int], rng) -> L
     
     current = start_idx
     while remaining:
-        # Find nearest remaining point
         current_pos = positions[current]
         nearest_idx = min(remaining, key=lambda i: np.linalg.norm(positions[i] - current_pos))
         route.append(nearest_idx)
@@ -333,21 +137,400 @@ def build_route_from_points(positions: np.ndarray, indices: List[int], rng) -> L
     return route
 
 
-def generate_routes(positions: np.ndarray, num_k: int, route_len: int, rng, method='hybrid') -> Tuple[List[List[int]], List[np.ndarray]]:
+def generate_routes_with_intersections(positions: np.ndarray, num_k: int, route_len: int, 
+                                        multi_route_prob: float, rng) -> Tuple[List[List[int]], List[np.ndarray]]:
     """
-    Generate routes using specified method.
+    Generate routes where nodes can belong to multiple routes (intersections).
+    
+    Each node appears in at least one route, and some nodes appear in multiple
+    routes to create realistic transfer points.
+    
+    Args:
+        positions: Array of node positions (N x 2)
+        num_k: Number of routes to generate
+        route_len: Number of nodes per route (approximate)
+        multi_route_prob: Probability of a node belonging to multiple routes
+        rng: Random number generator
+        
+    Returns:
+        routes: List of routes (each as list of node IDs, 1-indexed)
+        route_indices: List of routes (each as array of indices, 0-indexed)
+    """
+    num_n = len(positions)
+    routes = []
+    route_indices = []
+    
+    # Build KDTree for efficient nearest neighbor queries
+    tree = KDTree(positions)
+    
+    # Step 1: Create base assignment - each node belongs to at least one route
+    # We'll assign each node to a "primary" route
+    primary_route = {}
+    route_nodes = {k: [] for k in range(num_k)}
+    
+    # Distribute nodes evenly among routes for primary assignment
+    all_nodes = list(range(num_n))
+    rng.shuffle(all_nodes)
+    
+    for i, node_idx in enumerate(all_nodes):
+        route_id = i % num_k
+        primary_route[node_idx] = route_id
+        route_nodes[route_id].append(node_idx)
+    
+    # Step 2: Add secondary assignments (multi-route nodes)
+    # This creates intersections between routes
+    multi_route_nodes = []
+    for node_idx in all_nodes:
+        if rng.random() < multi_route_prob:
+            # This node will belong to additional routes
+            current_route = primary_route[node_idx]
+            # Choose different route(s) to add this node to
+            other_routes = [k for k in range(num_k) if k != current_route]
+            if other_routes:
+                num_extra = rng.integers(1, min(3, len(other_routes) + 1))
+                extra_routes = rng.choice(other_routes, size=num_extra, replace=False)
+                for extra_route in extra_routes:
+                    if node_idx not in route_nodes[extra_route]:
+                        route_nodes[extra_route].append(node_idx)
+                        multi_route_nodes.append((node_idx, extra_route))
+    
+    # Step 3: Build actual routes using nearest neighbor
+    for k in range(num_k):
+        nodes_in_route = route_nodes[k]
+        
+        if len(nodes_in_route) < 2:
+            # If too few nodes, add nearest neighbors
+            current_set = set(nodes_in_route)
+            needed = 2 - len(current_set)
+            if needed > 0:
+                # Find nearest neighbors to existing nodes
+                for idx in list(current_set):
+                    distances, neighbors = tree.query(positions[idx], k=min(10, num_n))
+                    for n_idx, dist in zip(neighbors, distances):
+                        if n_idx not in current_set:
+                            current_set.add(n_idx)
+                            needed -= 1
+                            if needed <= 0:
+                                break
+                    if needed <= 0:
+                        break
+            nodes_in_route = list(current_set)
+        
+        # Build route using nearest neighbor
+        if len(nodes_in_route) >= 2:
+            route = build_route_from_points(positions, nodes_in_route, rng)
+        else:
+            route = nodes_in_route
+        
+        # Trim or pad to target length
+        if len(route) > route_len:
+            route = route[:route_len]
+        
+        # Convert to 1-indexed
+        routes.append([int(n + 1) for n in route])
+        route_indices.append(np.array(route))
+    
+    # Step 4: Ensure all nodes are covered (each node appears in at least one route)
+    all_nodes_set = set(range(num_n))
+    covered_nodes = set()
+    for route in route_indices:
+        covered_nodes.update(route)
+    
+    uncovered = all_nodes_set - covered_nodes
+    if uncovered:
+        # Add uncovered nodes to the route closest to them
+        for node in uncovered:
+            # Find closest existing route
+            best_route = 0
+            best_dist = float('inf')
+            for k_idx, route in enumerate(route_indices):
+                for route_node in route:
+                    dist = np.linalg.norm(positions[node] - positions[route_node])
+                    if dist < best_dist:
+                        best_dist = dist
+                        best_route = k_idx
+            # Add to that route
+            routes[best_route].append(node + 1)
+            route_indices[best_route] = np.append(route_indices[best_route], node)
+    
+    # Print statistics about multi-route nodes
+    node_route_count = {}
+    for k, route in enumerate(route_indices):
+        for node in route:
+            node_route_count[node] = node_route_count.get(node, 0) + 1
+    
+    multi_count = sum(1 for count in node_route_count.values() if count > 1)
+    print(f"  Nodes in multiple routes: {multi_count}/{num_n} ({100*multi_count/num_n:.1f}%)")
+    if multi_count > 0:
+        max_routes = max(node_route_count.values())
+        print(f"  Max routes per node: {max_routes}")
+    
+    return routes, route_indices
+
+
+def generate_routes_covering_all_nodes(positions: np.ndarray, num_k: int, route_len: int, rng) -> Tuple[List[List[int]], List[np.ndarray]]:
+    """
+    Generate routes that collectively cover all nodes (basic version).
+    Each node appears in exactly one route.
+    
+    Args:
+        positions: Array of node positions (N x 2)
+        num_k: Number of routes to generate
+        route_len: Number of nodes per route (approximate)
+        rng: Random number generator
+        
+    Returns:
+        routes: List of routes (each as list of node IDs, 1-indexed)
+        route_indices: List of routes (each as array of indices, 0-indexed)
+    """
+    num_n = len(positions)
+    routes = []
+    route_indices = []
+    
+    # Build KDTree for efficient nearest neighbor queries
+    tree = KDTree(positions)
+    
+    # Shuffle node indices for random assignment order
+    all_nodes = list(range(num_n))
+    rng.shuffle(all_nodes)
+    
+    # Distribute nodes evenly among routes
+    route_nodes = {k: [] for k in range(num_k)}
+    for i, node_idx in enumerate(all_nodes):
+        route_id = i % num_k
+        route_nodes[route_id].append(node_idx)
+    
+    # Build actual routes for each route using nearest neighbor
+    for k in range(num_k):
+        nodes_in_route = route_nodes[k]
+        
+        if len(nodes_in_route) < 2:
+            # If too few nodes, add some from other routes
+            needed = 2 - len(nodes_in_route)
+            for other_node in all_nodes:
+                if other_node not in nodes_in_route:
+                    nodes_in_route.append(other_node)
+                    needed -= 1
+                    if needed <= 0:
+                        break
+        
+        # Build route using nearest neighbor within this set
+        if len(nodes_in_route) >= 2:
+            route = build_route_from_points(positions, nodes_in_route, rng)
+        else:
+            route = nodes_in_route
+        
+        # Convert to 1-indexed for output
+        routes.append([int(n + 1) for n in route])
+        route_indices.append(np.array(route))
+    
+    return routes, route_indices
+
+
+def generate_hybrid_routes_covering_all(positions: np.ndarray, num_k: int, route_len: int, 
+                                        multi_route_prob: float, rng) -> Tuple[List[List[int]], List[np.ndarray]]:
+    """
+    Hybrid approach: Use K-means clustering to create geographically coherent routes
+    that cover all nodes, with optional multi-route nodes.
+    """
+    from scipy.spatial import KDTree
+    from scipy.cluster.vq import kmeans2
+    
+    num_n = len(positions)
+    
+    # Determine number of clusters (routes)
+    actual_clusters = min(num_k, num_n)
+    
+    # Use K-means to cluster nodes
+    if num_n >= actual_clusters:
+        centroids, labels = kmeans2(positions, actual_clusters, minit='points', seed=rng)
+    else:
+        # Not enough points, simple distribution
+        return generate_routes_with_intersections(positions, num_k, route_len, multi_route_prob, rng)
+    
+    # Group nodes by cluster (primary assignment)
+    cluster_nodes = {i: [] for i in range(actual_clusters)}
+    for node_idx, label in enumerate(labels):
+        cluster_nodes[label].append(node_idx)
+    
+    # Track which nodes are in which cluster (primary)
+    node_primary_cluster = {node_idx: label for node_idx, label in enumerate(labels)}
+    
+    # Step 2: Add secondary assignments (multi-route nodes)
+    # Nodes near cluster boundaries may belong to multiple clusters
+    all_nodes = list(range(num_n))
+    boundary_threshold = np.percentile(positions, 70)  # Rough boundary detection
+    
+    for node_idx in all_nodes:
+        if rng.random() < multi_route_prob:
+            # Find if this node is close to other clusters
+            node_pos = positions[node_idx]
+            current_cluster = node_primary_cluster[node_idx]
+            
+            # Calculate distances to other cluster centers
+            distances_to_centroids = []
+            for c_idx, centroid in enumerate(centroids):
+                if c_idx != current_cluster:
+                    dist = np.linalg.norm(node_pos - centroid)
+                    distances_to_centroids.append((c_idx, dist))
+            
+            distances_to_centroids.sort(key=lambda x: x[1])
+            
+            # Add to closest other cluster if within threshold
+            for other_cluster, dist in distances_to_centroids[:2]:  # Max 2 extra routes
+                if node_idx not in cluster_nodes[other_cluster]:
+                    cluster_nodes[other_cluster].append(node_idx)
+    
+    routes = []
+    route_indices = []
+    
+    # Ensure each cluster has at least 2 nodes
+    for cluster_id in range(actual_clusters):
+        if len(cluster_nodes[cluster_id]) < 2:
+            current_set = set(cluster_nodes[cluster_id])
+            tree = KDTree(positions)
+            needed = 2 - len(current_set)
+            
+            for _ in range(needed):
+                best_idx = None
+                best_dist = float('inf')
+                for idx in current_set:
+                    distances, neighbors = tree.query(positions[idx], k=min(10, num_n))
+                    for n_idx, dist in zip(neighbors, distances):
+                        if n_idx not in current_set and dist < best_dist:
+                            best_dist = dist
+                            best_idx = n_idx
+                if best_idx is not None:
+                    current_set.add(best_idx)
+            
+            cluster_nodes[cluster_id] = list(current_set)
+    
+    # Build route for each cluster
+    for cluster_id in range(actual_clusters):
+        nodes_in_cluster = cluster_nodes[cluster_id]
+        
+        if len(nodes_in_cluster) >= 2:
+            route = build_route_from_points(positions, nodes_in_cluster, rng)
+        else:
+            route = nodes_in_cluster
+        
+        # Trim to target length
+        if len(route) > route_len:
+            route = route[:route_len]
+        
+        routes.append([int(n + 1) for n in route])
+        route_indices.append(np.array(route))
+    
+    # If we have fewer routes than requested, duplicate some routes with variations
+    while len(routes) < num_k:
+        template_idx = len(routes) % len(routes)
+        template = routes[template_idx]
+        varied = template[1:] + [template[0]]
+        routes.append(varied)
+        route_indices.append(np.array([int(n) - 1 for n in varied]))
+    
+    # Ensure all nodes are covered
+    covered_nodes = set()
+    for route in route_indices:
+        covered_nodes.update(route)
+    
+    uncovered = set(range(num_n)) - covered_nodes
+    if uncovered:
+        # Add uncovered nodes to the closest route
+        for node in uncovered:
+            best_route = 0
+            best_dist = float('inf')
+            for k_idx, route in enumerate(route_indices):
+                if len(route) > 0:
+                    dist = np.linalg.norm(positions[node] - positions[route[0]])
+                    if dist < best_dist:
+                        best_dist = dist
+                        best_route = k_idx
+            routes[best_route].append(node + 1)
+            route_indices[best_route] = np.append(route_indices[best_route], node)
+    
+    return routes, route_indices
+
+
+def generate_grid_routes_covering_all(positions: np.ndarray, num_k: int, route_len: int, rng) -> Tuple[List[List[int]], List[np.ndarray]]:
+    """
+    Generate routes by dividing the city into vertical strips,
+    ensuring all nodes are covered.
+    """
+    num_n = len(positions)
+    
+    # Sort points by X coordinate
+    sorted_indices = np.argsort(positions[:, 0])
+    
+    # Calculate points per route
+    points_per_route = max(2, num_n // num_k + 1)
+    
+    routes = []
+    route_indices = []
+    covered = set()
+    
+    for k in range(num_k):
+        start = k * points_per_route
+        end = min(start + points_per_route, num_n)
+        
+        if start >= num_n:
+            start = start % num_n
+            end = min(start + points_per_route, num_n)
+        
+        sector_indices = sorted_indices[start:end]
+        
+        if len(sector_indices) < 2:
+            current_set = set(sector_indices)
+            tree = KDTree(positions)
+            needed = 2 - len(current_set)
+            for _ in range(needed):
+                best_idx = None
+                best_dist = float('inf')
+                for idx in current_set:
+                    distances, neighbors = tree.query(positions[idx], k=min(10, num_n))
+                    for n_idx, dist in zip(neighbors, distances):
+                        if n_idx not in current_set and dist < best_dist:
+                            best_dist = dist
+                            best_idx = n_idx
+                if best_idx is not None:
+                    current_set.add(best_idx)
+            sector_indices = list(current_set)
+        
+        if len(sector_indices) > 0:
+            sector_positions = positions[sector_indices]
+            sorted_by_y = np.argsort(sector_positions[:, 1])
+            route = [sector_indices[i] for i in sorted_by_y]
+            
+            routes.append([int(n + 1) for n in route])
+            route_indices.append(np.array(route))
+            covered.update(sector_indices)
+    
+    # Cover any remaining uncovered nodes
+    uncovered = set(range(num_n)) - covered
+    if uncovered and routes:
+        for node in uncovered:
+            routes[0].append(node + 1)
+            route_indices[0] = np.append(route_indices[0], node)
+    
+    return routes, route_indices
+
+
+def generate_routes(positions: np.ndarray, num_k: int, route_len: int, rng, 
+                   method='hybrid', multi_route_prob=DEFAULT_MULTI_ROUTE_PROB) -> Tuple[List[List[int]], List[np.ndarray]]:
+    """
+    Generate routes that cover all nodes.
     
     Methods:
-        - 'nearest': Nearest Neighbor (creates natural paths)
+        - 'nearest': Nearest Neighbor with coverage guarantee (no intersections by default)
         - 'grid': Divide city into vertical strips
-        - 'hybrid': K-means clustering + nearest neighbor (recommended)
+        - 'hybrid': K-means clustering + nearest neighbor (recommended, with intersections)
     """
     if method == 'nearest':
-        return generate_realistic_routes(positions, num_k, route_len, rng)
+        return generate_routes_covering_all_nodes(positions, num_k, route_len, rng)
     elif method == 'grid':
-        return generate_grid_routes(positions, num_k, route_len, rng)
-    else:  # 'hybrid' (default)
-        return generate_hybrid_routes(positions, num_k, route_len, rng)
+        return generate_grid_routes_covering_all(positions, num_k, route_len, rng)
+    else:  # 'hybrid' (default) - with intersections
+        return generate_hybrid_routes_covering_all(positions, num_k, route_len, multi_route_prob, rng)
 
 
 # ============================================================================
@@ -439,6 +622,9 @@ def generate_data(args, rng, seed):
     min_dist = args.min_dist
     d_walk_max = args.d_walk_max
     
+    if not args.quiet:
+        print(f"\nGenerating with {NumK} routes, {route_len} nodes per route average...")
+    
     # Generate positions
     node_positions = generate_positions(NumN, grid_w, grid_h, min_dist, rng)
     demand_positions, de = generate_demand_positions(node_positions, NumQ, grid_w, grid_h, d_walk_max, rng)
@@ -446,8 +632,10 @@ def generate_data(args, rng, seed):
     # Generate quality
     w = generate_quality(NumN, rng)
     
-    # Generate routes (using hybrid method for realistic paths)
-    routes, route_indices = generate_routes(node_positions, NumK, route_len, rng, method='hybrid')
+    # Generate routes (ensuring all nodes are covered, with intersections)
+    routes, route_indices = generate_routes(node_positions, NumK, route_len, rng, 
+                                            method=args.route_method,
+                                            multi_route_prob=DEFAULT_MULTI_ROUTE_PROB)
     
     # Build matrices
     d_matrix = compute_d_matrix(demand_positions, node_positions)
@@ -466,9 +654,8 @@ def generate_data(args, rng, seed):
     # Compute statistics
     stats = compute_statistics(d_matrix, de, w, d_walk_max)
     
-    # Build output data structure with UPPERCASE keys as expected by the model
+    # Build output data structure
     data = {
-        # Basic parameters (UPPERCASE as expected by loader)
         "NumN": NumN,
         "NumK": NumK,
         "NumQ": NumQ,
@@ -483,7 +670,6 @@ def generate_data(args, rng, seed):
         "W3": args.W3,
         "W4": args.W4,
         
-        # Sets (UPPERCASE)
         "C": C,
         "T": T,
         "I": I,
@@ -492,7 +678,6 @@ def generate_data(args, rng, seed):
         "N": list(range(1, NumN + 1)),
         "K": list(range(1, NumK + 1)),
         
-        # Arrays (UPPERCASE)
         "de": de,
         "w": w,
         "d": d_matrix,
@@ -500,15 +685,13 @@ def generate_data(args, rng, seed):
         "V": V,
         "V_tamanho": V_tamanho,
         
-        # Metadata
         "metadata": {
             "versao": "2.0",
             "data_geracao": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "semente": seed,
-            "descricao": "Dados sinteticos SouBuz",
+            "descricao": "Dados sinteticos SouBuz (todos os nos pertencem a pelo menos uma rota, com interseccoes)",
         },
         
-        # Visualization data
         "visualizacao": {
             "posicoes_pontos": [[round(float(x), 2), round(float(y), 2)] for x, y in node_positions],
             "posicoes_demandas": [[round(float(x), 2), round(float(y), 2)] for x, y in demand_positions],
@@ -517,30 +700,34 @@ def generate_data(args, rng, seed):
             "rotas": V,
         },
         
-        # Statistics
         "estatisticas": stats,
     }
     
     return data
 
 
-def generate_single(args, seed, rng, quiet=False):
-    """Wrapper for generate_data that matches old API (used by tests)."""
-    data = generate_data(args, rng, seed)
-    if not quiet:
-        stats = data["estatisticas"]
-        print(f"\nSummary:")
-        print(f"  Nodes: {data['NumN']}, Routes: {data['NumK']}, Demand zones: {data['NumQ']}")
-        print(f"  Total demand: {stats['demanda_total']:.0f}")
-        print(f"  Average quality: {stats['qualidade_media']:.3f}")
-    return data
+# ============================================================================
+# WRAPPER DE COMPATIBILIDADE (generate_single → generate_data)
+# ============================================================================
+
+def generate_single(args, seed, nprng, quiet=False):
+    """Generate data (backward-compatible wrapper).
+    
+    Args:
+        args: Command-line arguments (namespace)
+        seed: Random seed
+        nprng: NumPy random generator
+        quiet: If True, suppress print output
+    """
+    args.quiet = quiet
+    return generate_data(args, nprng, seed)
 
 
 # ============================================================================
 # INTERFACE DE LINHA DE COMANDO
 # ============================================================================
 
-def parse_args(args=None):
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="Generate synthetic SouBuz data")
     parser.add_argument("--seed", type=int, default=None, help="Random seed")
     parser.add_argument("--num-n", type=int, default=DEFAULT_NUM_N, help="Number of nodes")
@@ -549,7 +736,7 @@ def parse_args(args=None):
     parser.add_argument("--route-len", type=int, default=None, help="Nodes per route")
     parser.add_argument("--route-method", type=str, default="hybrid", 
                        choices=["nearest", "grid", "hybrid"],
-                       help="Route generation method: nearest, grid, or hybrid")
+                       help="Route generation method: nearest (no intersections), grid, or hybrid (with intersections)")
     parser.add_argument("--grid-width", type=float, default=DEFAULT_GRID_WIDTH, help="City width (m)")
     parser.add_argument("--grid-height", type=float, default=DEFAULT_GRID_HEIGHT, help="City height (m)")
     parser.add_argument("--min-dist", type=float, default=DEFAULT_MIN_DIST, help="Min distance between nodes (m)")
@@ -563,11 +750,9 @@ def parse_args(args=None):
     parser.add_argument("--W2", type=float, default=DEFAULT_W2, help="Weight for technical feasibility")
     parser.add_argument("--W3", type=float, default=DEFAULT_W3, help="Weight for infrastructure cost")
     parser.add_argument("--W4", type=float, default=DEFAULT_W4, help="Weight for spacing penalty")
-    parser.add_argument("--scenarios", type=int, default=None, help="Batch-generate N scenarios")
-    parser.add_argument("--prefix", default="cenario", help="Filename prefix for batch mode")
     parser.add_argument("--output", "-o", default="dados_generated.json", help="Output JSON file")
     parser.add_argument("--quiet", action="store_true", help="Suppress output")
-    return parser.parse_args(args)
+    return parser.parse_args(argv)
 
 
 def main():
@@ -602,6 +787,30 @@ def main():
     print(f"  Total demand: {stats['demanda_total']:.0f}")
     print(f"  Average quality: {stats['qualidade_media']:.3f}")
     print(f"  Accessible pairs: {stats['perc_acessiveis']:.1f}%")
+    
+    # Verify coverage and count intersections
+    all_nodes = set(data["N"])
+    nodes_in_routes = set()
+    node_route_count = {}
+    
+    for route in data["V"]:
+        for node in route:
+            nodes_in_routes.add(node)
+            node_route_count[node] = node_route_count.get(node, 0) + 1
+    
+    missing = all_nodes - nodes_in_routes
+    if missing:
+        print(f"\n⚠️ WARNING: {len(missing)} nodes not in any route: {missing}")
+    else:
+        print(f"\n✅ All {data['NumN']} nodes are covered by at least one route!")
+    
+    # Show intersection statistics
+    multi_route_nodes = [n for n, count in node_route_count.items() if count > 1]
+    if multi_route_nodes:
+        print(f"\n🔄 Intersections: {len(multi_route_nodes)} nodes belong to multiple routes")
+        print(f"   Multi-route nodes: {sorted(multi_route_nodes)[:20]}{'...' if len(multi_route_nodes) > 20 else ''}")
+    else:
+        print(f"\n📌 No intersections (each node belongs to exactly one route)")
     
     # Print route info
     print(f"\nRoutes generated (method: {args.route_method}):")
