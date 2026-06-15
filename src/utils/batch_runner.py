@@ -56,12 +56,12 @@ WEIGHT_GRID = {
 def _define_tiers(quick=False):
     TIERS.clear()
     s = 0.5 if quick else 1.0
-    TIERS.append(("micro",           int(20*s),  2, int(5*s),  3,  WEIGHT_GRID["full"],   60))
-    TIERS.append(("pequena",         int(50*s),  4, int(10*s), 3,  WEIGHT_GRID["full"],  120))
-    TIERS.append(("media",           int(150*s), 6, int(20*s), 2,  WEIGHT_GRID["medium"], 300))
-    TIERS.append(("grande",          int(300*s), 8, int(30*s), 2,  WEIGHT_GRID["medium"], 600))
-    TIERS.append(("muito_grande",    int(500*s),10, int(30*s), 2,  WEIGHT_GRID["sparse"],1200))
-    TIERS.append(("extrema",         int(800*s),15, int(40*s), 1,  WEIGHT_GRID["sparse"],1800))
+    TIERS.append(("micro",           int(20*s),  2, int(5*s),  3,  WEIGHT_GRID["full"]))
+    TIERS.append(("pequena",         int(50*s),  4, int(10*s), 3,  WEIGHT_GRID["full"]))
+    TIERS.append(("media",           int(150*s), 6, int(20*s), 2,  WEIGHT_GRID["medium"]))
+    TIERS.append(("grande",          int(300*s), 8, int(30*s), 2,  WEIGHT_GRID["medium"]))
+    TIERS.append(("muito_grande",    int(500*s),10, int(30*s), 2,  WEIGHT_GRID["sparse"]))
+    TIERS.append(("extrema",         int(800*s),15, int(40*s), 1,  WEIGHT_GRID["sparse"]))
     return TIERS
 
 
@@ -97,7 +97,7 @@ def generate_data_for_tier(tier_label, N, K, Q, seed):
     return data
 
 
-def solve_run(data, W, time_limit, verbose=False):
+def solve_run(data, W, verbose=False):
     data["W1"], data["W2"], data["W3"], data["W4"] = W
     from src.model.domains import build_a_domain, build_S_indices
     from src.model.variables import create_variables
@@ -114,7 +114,6 @@ def solve_run(data, W, time_limit, verbose=False):
     model = gp.Model("soubuz_batch")
     model.Params.OutputFlag = 0
     model.Params.NonConvex = 2
-    model.Params.TimeLimit = time_limit
 
     vars_dict = create_variables(model, data, domains)
     obj_exprs = build_objective(model, data, vars_dict, domains)
@@ -129,18 +128,13 @@ def solve_run(data, W, time_limit, verbose=False):
     add_c8(model, data, vars_dict)
 
     model.update()
-
-    if not verbose:
-        model.Params.OutputFlag = 0
-    else:
-        model.Params.OutputFlag = 1
+    model.Params.OutputFlag = 1 if verbose else 0
 
     model.optimize()
 
     status_map = {
         gp.GRB.OPTIMAL: "optimal",
         gp.GRB.INFEASIBLE: "infeasible",
-        gp.GRB.TIME_LIMIT: "time_limit",
         gp.GRB.UNBOUNDED: "unbounded",
         gp.GRB.INF_OR_UNBD: "inf_or_unbd",
     }
@@ -149,6 +143,7 @@ def solve_run(data, W, time_limit, verbose=False):
     result = {
         "status": status,
         "objVal": model.objVal if model.status == gp.GRB.OPTIMAL else None,
+        "mip_gap": model.MIPGap if model.status == gp.GRB.OPTIMAL else None,
         "model": model,
         "vars": vars_dict,
         "obj_exprs": obj_exprs,
@@ -191,7 +186,8 @@ def save_run(run_dir, data, result, W, weight_label, tier_label,
         "weight_label": weight_label,
         "mu": data.get("mu", 1),
         "theta": data.get("theta", 1),
-        "per_solve_limit_s": data.get("_time_limit", 0),
+        "mip_gap": result.get("mip_gap"),
+        "solve_status": result["status"],
         "normalization_time_s": round(norm_time, 2),
         "solve_time_s": round(solve_time, 2),
         "timestamp": datetime.now().isoformat(),
@@ -358,24 +354,20 @@ def update_index(output_dir, tier_label, weight_label, seed, status,
 def estimate_total_time(tiers):
     total_norm_solves = 0
     total_final_solves = 0
-    total_est_s = 0
 
-    for label, N, K, Q, n_seeds, weight_list, per_solve_limit in tiers:
+    for label, N, K, Q, n_seeds, weight_list in tiers:
         n_weights = len(weight_list)
         for _ in range(n_seeds):
             total_norm_solves += 4
             total_final_solves += n_weights
-            est_norm = 4 * per_solve_limit * 0.3
-            est_final = n_weights * per_solve_limit * 0.5
-            total_est_s += est_norm + est_final
 
-    return total_norm_solves, total_final_solves, total_est_s
+    return total_norm_solves, total_final_solves
 
 
 def print_plan(tiers):
     total_runs = 0
     total_norms = 0
-    for label, N, K, Q, n_seeds, weight_list, per_solve_limit in tiers:
+    for label, N, K, Q, n_seeds, weight_list in tiers:
         n_weights = len(weight_list)
         runs = n_seeds * n_weights
         norms = n_seeds * 4
@@ -384,20 +376,19 @@ def print_plan(tiers):
         print(
             f"  {label:15s}  N={N:4d} K={K:2d} Q={Q:2d}  "
             f"seeds={n_seeds}  weights={n_weights:2d}  "
-            f"limit={per_solve_limit:4d}s  "
             f"-> {runs:3d} final solves + {norms:2d} norm solves"
         )
 
-    n, f, est = estimate_total_time(tiers)
+    n, f = estimate_total_time(tiers)
     print(
         f"\nTotal: {n} normalization solves + {f} final solves "
         f"= {n + f} Gurobi solves"
     )
-    print(f"Estimated: {timedelta(seconds=int(est))} (target: ~8 h)")
+    print("Stopping condition: MIPGap < 1% (set in solver.py build_model)")
 
 
 def run_tier(tier, base_dir, quick=False, verbose=False):
-    label, N, K, Q, n_seeds, weight_list, per_solve_limit = tier
+    label, N, K, Q, n_seeds, weight_list = tier
 
     for seed_idx in range(n_seeds):
         seed = 42 + seed_idx * 10
@@ -408,7 +399,6 @@ def run_tier(tier, base_dir, quick=False, verbose=False):
         t0 = time.time()
         data = generate_data_for_tier(label, N, K, Q, seed)
         gen_time = time.time() - t0
-        data["_time_limit"] = per_solve_limit
         n_I = len(data.get("I", []))
         n_L = len(data.get("L", []))
         print(f"  Data generated in {gen_time:.1f}s (|I|={n_I}, |L|={n_L})")
@@ -422,9 +412,7 @@ def run_tier(tier, base_dir, quick=False, verbose=False):
         except Exception as e:
             print(f"  NORMALIZATION FAILED: {e}")
             for wlabel, W in weight_list:
-                run_id = _next_run_id(base_dir)
-                run_dir = Path(base_dir) / run_id
-                run_dir.mkdir(parents=True, exist_ok=True)
+                run_dir, run_id = _make_run_dir(base_dir, label, seed, wlabel)
                 result = {"status": "norm_failed", "objVal": None}
                 save_run(run_dir, data, result, W, wlabel,
                          label, 0, 0, seed)
@@ -436,15 +424,13 @@ def run_tier(tier, base_dir, quick=False, verbose=False):
         for wlabel, W in weight_list:
             t2 = time.time()
             try:
-                result = solve_run(data, W, per_solve_limit, verbose=verbose)
+                result = solve_run(data, W, verbose=verbose)
             except Exception as e:
                 print(f"  SOLVE FAILED ({wlabel}): {e}")
                 result = {"status": "error", "objVal": None}
             solve_time = time.time() - t2
 
-            run_id = _next_run_id(base_dir)
-            run_dir = Path(base_dir) / run_id
-            run_dir.mkdir(parents=True, exist_ok=True)
+            run_dir, run_id = _make_run_dir(base_dir, label, seed, wlabel)
 
             save_run(run_dir, data, result, W, wlabel,
                      label, solve_time, norm_time, seed)
@@ -452,7 +438,7 @@ def run_tier(tier, base_dir, quick=False, verbose=False):
                          result["status"], result.get("objVal"),
                          solve_time, run_id, datetime.now().isoformat())
 
-            icons = {"optimal": "OK", "infeasible": "IN", "time_limit": "TL",
+            icons = {"optimal": "OK", "infeasible": "IN",
                      "error": "ER", "norm_failed": "NF"}
             icon = icons.get(result["status"], "??")
             obj_str = f"obj={result['objVal']:.4f}" if result.get("objVal") is not None else "no-obj"
@@ -462,18 +448,22 @@ def run_tier(tier, base_dir, quick=False, verbose=False):
         del data
 
 
-def _next_run_id(base_dir):
+def _make_run_dir(base_dir, tier_label, seed, weight_label):
     base = Path(base_dir)
     base.mkdir(parents=True, exist_ok=True)
     nums = []
     for d in base.iterdir():
         if d.is_dir() and d.name.startswith("run_"):
+            parts = d.name.split("__")
             try:
-                nums.append(int(d.name.split("_")[1]))
+                nums.append(int(parts[0].split("_")[1]))
             except (IndexError, ValueError):
                 pass
     next_num = max(nums) + 1 if nums else 1
-    return f"run_{next_num:04d}"
+    name = f"run_{next_num:04d}__{tier_label}__s{seed}__{weight_label}"
+    path = base / name
+    path.mkdir(parents=True, exist_ok=True)
+    return path, f"run_{next_num:04d}"
 
 
 def main():
@@ -513,7 +503,7 @@ def main():
 
     wall = time.time() - start_wall
 
-    grand_total = {"optimal": 0, "infeasible": 0, "time_limit": 0,
+    grand_total = {"optimal": 0, "infeasible": 0,
                    "error": 0, "norm_failed": 0}
     index_path = base_dir / "runs_index.csv"
     if index_path.exists():

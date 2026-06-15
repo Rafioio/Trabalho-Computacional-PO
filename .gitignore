@@ -43,6 +43,12 @@ Thumbs.db
 # Generated JSON data (regenerate via loader.py)
 src/data/dados.json
 
+# AI jailbreak test file
+.ai-jail
+
+# BH CSV data (large, regenerate via convert_csv_to_data.py)
+src/data/*.csv
+
 # Generated data files (regenerate via generate_data.py)
 dados_generated.json
 cenario_*.json
