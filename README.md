@@ -102,3 +102,29 @@ python -c "from src.utils.export_solution import export_solution; from src.model
 ## 🔄 Histórico de Migração
 
 Este repositório foi originalmente implementado em **OPL/CPLEX**. O modelo foi traduzido para **Python/Gurobi** e modularizado para melhor manutenibilidade. A implementação original em OPL foi removida após a conclusão da migração.
+
+
+## Arquitetura Modular do Código
+
+A implementação é dividida em módulos especializados, cada um com uma função específica:
+
+loader.py: Carrega arquivos de entrada no formato JSON ou OPL (.dat), normalizando índices e convertendo estruturas de dados para o formato interno.
+
+domains.py: Constrói domínios esparsos para as variáveis de decisão. Por exemplo, a variável a_qnk só é criada para pares (q,n) onde d_qn <= d_walk_max, reduzindo drasticamente o número de variáveis.
+
+variables.py: Define todas as variáveis de decisão do modelo (binárias, inteiras e contínuas) utilizando a API do Gurobi.
+
+objective.py: Constrói as expressões das quatro funções objetivo (f1 a f4) e as agrega em uma função escalar ponderada (macro-objetivo).
+
+constraints.py: Implementa as oito restrições do modelo (C1 a C8), incluindo ativação de infraestrutura, capacidade de rota, espaçamento máximo e capacidade total do sistema.
+
+solver.py: Orquestra a construção do modelo, executa a otimização e retorna os resultados. Inclui suporte para normalização de pesos via payoff table.
+
+validator.py: Realiza a validação de consistência dos dados de entrada (tamanhos, conjuntos, domínios).
+
+weight_normalizer.py: Executa a normalização dos pesos utilizando a técnica de pontos utópicos e anti-utópicos (payoff table).
+
+export_solution.py: Exporta os resultados da otimização para JSON, CSV ou Excel (múltiplas abas).
+
+map_viewer.py: Gera visualizações gráficas (matplotlib) dos dados de entrada e da solução otimizada (mapas de calor, rotas, pontos ativos).
+
