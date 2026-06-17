@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """
 Batch experiment runner for SouBuz — executes 6 instance tiers across multiple
-seeds and weight combinations, saving full results to docs/runs/.
+seeds, W1-W4 weight combinations, and mu/theta macro-weight combinations,
+saving full results to runs/.
+
+25% of runs use real Belo Horizonte CSV data (distributed systematically every
+4th seed across all tiers); the remaining 75% use synthetic data.
 
 Usage:
     python -m src.utils.batch_runner                    # Run all tiers
@@ -29,6 +33,9 @@ from src.model.solver import build_model
 # ============================================================================
 TIERS = []
 
+# Contador global de seeds para garantir unicidade entre tiers
+_global_seed_counter = 0
+
 WEIGHT_GRID = {
     "full": [
         ("ahp_default",   [0.35, 0.15, 0.30, 0.20]),
@@ -52,6 +59,14 @@ WEIGHT_GRID = {
     ],
 }
 
+MU_THETA_GRID = [
+    ("equal",        1.0, 1.0),
+    ("user_fav",     1.5, 0.5),
+    ("op_fav",       0.5, 1.5),
+    ("strong_user",  2.0, 1.0),
+    ("strong_op",    1.0, 2.0),
+]
+
 
 def _define_tiers(quick=False):
     TIERS.clear()
@@ -71,8 +86,8 @@ def parse_args(argv=None):
     )
     parser.add_argument("--tiers", default=None,
                         help="Comma-separated tier names to run (default: all)")
-    parser.add_argument("--output-dir", default="docs/runs",
-                        help="Output root (default: docs/runs)")
+    parser.add_argument("--output-dir", default="runs",
+                        help="Output root (default: runs)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Print experiment plan and exit")
     parser.add_argument("--quick", action="store_true",
@@ -92,8 +107,71 @@ def generate_data_for_tier(tier_label, N, K, Q, seed):
     ])
     rng = np.random.default_rng(seed)
     data = generate_data(args, rng, seed)
-    data["mu"] = 1.0
-    data["theta"] = 1.0
+    return data
+
+
+# Mapeamento de tamanho de instância BH por tier
+_BH_SIZE_MAP = {
+    "micro":         (1,  15),
+    "pequena":       (2,  25),
+    "media":         (3,  40),
+    "grande":        (5,  50),
+    "muito_grande":  (8,  80),
+    "extrema":       (10, 100),
+}
+
+
+def _get_next_seed():
+    global _global_seed_counter
+    seed = 42 + _global_seed_counter * 10
+    _global_seed_counter += 1
+    return seed
+
+
+def _should_use_bh(seed):
+    """Retorna True para 25% das seeds (sistemático: a cada 4ª seed global)."""
+    global_idx = (seed - 42) // 10
+    return global_idx % 4 == 0
+
+
+def generate_data_from_csv(tier_label, N, K, Q, seed):
+    import os
+    import sys
+    import tempfile
+
+    from src.utils.convert_csv_to_data import main as csv_main
+    from src.data.loader import load_json
+
+    max_routes, max_stops = _BH_SIZE_MAP.get(tier_label, (3, 30))
+
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w") as f:
+        temp_path = f.name
+
+    try:
+        old_argv = sys.argv
+        sys.argv = [
+            "convert_csv_to_data",
+            "--max-routes", str(max_routes),
+            "--max-stops", str(max_stops),
+            "--num-q", str(Q),
+            "--seed", str(seed),
+            "--output", temp_path,
+            "--d-walk-max", "250",
+        ]
+        try:
+            exit_code = csv_main()
+        finally:
+            sys.argv = old_argv
+
+        if exit_code != 0:
+            raise RuntimeError(f"convert_csv_to_data failed with code {exit_code}")
+
+        data = load_json(temp_path)
+    finally:
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
+
+    print(f"  BH CSV data loaded: N={data['NumN']}, K={data['NumK']}, Q={data['NumQ']}")
     return data
 
 
@@ -172,7 +250,7 @@ def _norm_val(val, lo, hi):
 
 
 def save_run(run_dir, data, result, W, weight_label, tier_label,
-             solve_time, norm_time, seed):
+             solve_time, norm_time, seed, mu=None, theta=None):
     run_dir = Path(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -184,8 +262,8 @@ def save_run(run_dir, data, result, W, weight_label, tier_label,
         "NumQ": data["NumQ"],
         "W1": W[0], "W2": W[1], "W3": W[2], "W4": W[3],
         "weight_label": weight_label,
-        "mu": data.get("mu", 1),
-        "theta": data.get("theta", 1),
+        "mu": mu if mu is not None else data.get("mu", 1),
+        "theta": theta if theta is not None else data.get("theta", 1),
         "mip_gap": result.get("mip_gap"),
         "solve_status": result["status"],
         "normalization_time_s": round(norm_time, 2),
@@ -336,16 +414,16 @@ def save_run(run_dir, data, result, W, weight_label, tier_label,
         pass
 
 
-def update_index(output_dir, tier_label, weight_label, seed, status,
-                 objVal, solve_time, run_id, timestamp):
+def update_index(output_dir, tier_label, source_tag, weight_label, mu, theta,
+                 seed, status, objVal, solve_time, run_id, timestamp):
     index_path = Path(output_dir) / "runs_index.csv"
     exists = index_path.exists()
     with open(index_path, "a") as f:
         if not exists:
-            f.write("run_id,tier,seed,weights,status,objVal,"
+            f.write("run_id,tier,source,seed,weights,mu,theta,status,objVal,"
                     "solve_time_s,timestamp\n")
         f.write(
-            f"{run_id},{tier_label},{seed},{weight_label},{status},"
+            f"{run_id},{tier_label},{source_tag},{seed},{weight_label},{mu},{theta},{status},"
             f"{objVal if objVal is not None else ''},"
             f"{solve_time:.2f},{timestamp}\n"
         )
@@ -359,7 +437,7 @@ def estimate_total_time(tiers):
         n_weights = len(weight_list)
         for _ in range(n_seeds):
             total_norm_solves += 4
-            total_final_solves += n_weights
+            total_final_solves += n_weights * len(MU_THETA_GRID)
 
     return total_norm_solves, total_final_solves
 
@@ -369,14 +447,16 @@ def print_plan(tiers):
     total_norms = 0
     for label, N, K, Q, n_seeds, weight_list in tiers:
         n_weights = len(weight_list)
-        runs = n_seeds * n_weights
+        n_mutheta = len(MU_THETA_GRID)
+        runs = n_seeds * n_weights * n_mutheta
         norms = n_seeds * 4
         total_runs += runs
         total_norms += norms
         print(
             f"  {label:15s}  N={N:4d} K={K:2d} Q={Q:2d}  "
             f"seeds={n_seeds}  weights={n_weights:2d}  "
-            f"-> {runs:3d} final solves + {norms:2d} norm solves"
+            f"mu/theta={n_mutheta:2d}  "
+            f"-> {runs:4d} final solves + {norms:2d} norm solves"
         )
 
     n, f = estimate_total_time(tiers)
@@ -391,13 +471,18 @@ def run_tier(tier, base_dir, quick=False, verbose=False):
     label, N, K, Q, n_seeds, weight_list = tier
 
     for seed_idx in range(n_seeds):
-        seed = 42 + seed_idx * 10
+        seed = _get_next_seed()
+        use_bh = _should_use_bh(seed)
+        source_tag = "BH" if use_bh else "SYNTH"
         print(f"\n{'='*60}")
-        print(f"TIER: {label} | seed={seed} | N={N} K={K} Q={Q}")
+        print(f"TIER: {label} | seed={seed} | N={N} K={K} Q={Q} | source={source_tag}")
         print(f"{'='*60}")
 
         t0 = time.time()
-        data = generate_data_for_tier(label, N, K, Q, seed)
+        if use_bh:
+            data = generate_data_from_csv(label, N, K, Q, seed)
+        else:
+            data = generate_data_for_tier(label, N, K, Q, seed)
         gen_time = time.time() - t0
         n_I = len(data.get("I", []))
         n_L = len(data.get("L", []))
@@ -412,43 +497,47 @@ def run_tier(tier, base_dir, quick=False, verbose=False):
         except Exception as e:
             print(f"  NORMALIZATION FAILED: {e}")
             for wlabel, W in weight_list:
-                run_dir, run_id = _make_run_dir(base_dir, label, seed, wlabel)
-                result = {"status": "norm_failed", "objVal": None}
-                save_run(run_dir, data, result, W, wlabel,
-                         label, 0, 0, seed)
-                update_index(base_dir, label, wlabel, seed,
-                             "norm_failed", None, 0,
-                             run_id, datetime.now().isoformat())
+                for mulabel, mu, theta in MU_THETA_GRID:
+                    run_dir, run_id = _make_run_dir(base_dir, label, seed, wlabel, mulabel, mu, theta)
+                    result = {"status": "norm_failed", "objVal": None}
+                    save_run(run_dir, data, result, W, wlabel,
+                             label, 0, 0, seed, mu, theta)
+                    update_index(base_dir, label, source_tag, wlabel, mu, theta, seed,
+                                 "norm_failed", None, 0,
+                                 run_id, datetime.now().isoformat())
             return
 
         for wlabel, W in weight_list:
-            t2 = time.time()
-            try:
-                result = solve_run(data, W, verbose=verbose)
-            except Exception as e:
-                print(f"  SOLVE FAILED ({wlabel}): {e}")
-                result = {"status": "error", "objVal": None}
-            solve_time = time.time() - t2
+            for mulabel, mu, theta in MU_THETA_GRID:
+                t2 = time.time()
+                data["mu"] = mu
+                data["theta"] = theta
+                try:
+                    result = solve_run(data, W, verbose=verbose)
+                except Exception as e:
+                    print(f"  SOLVE FAILED ({wlabel}, mu={mu}, theta={theta}): {e}")
+                    result = {"status": "error", "objVal": None}
+                solve_time = time.time() - t2
 
-            run_dir, run_id = _make_run_dir(base_dir, label, seed, wlabel)
+                run_dir, run_id = _make_run_dir(base_dir, label, seed, wlabel, mulabel, mu, theta)
 
-            save_run(run_dir, data, result, W, wlabel,
-                     label, solve_time, norm_time, seed)
-            update_index(base_dir, label, wlabel, seed,
-                         result["status"], result.get("objVal"),
-                         solve_time, run_id, datetime.now().isoformat())
+                save_run(run_dir, data, result, W, wlabel,
+                         label, solve_time, norm_time, seed, mu, theta)
+                update_index(base_dir, label, source_tag, wlabel, mu, theta, seed,
+                             result["status"], result.get("objVal"),
+                             solve_time, run_id, datetime.now().isoformat())
 
-            icons = {"optimal": "OK", "infeasible": "IN",
-                     "error": "ER", "norm_failed": "NF"}
-            icon = icons.get(result["status"], "??")
-            obj_str = f"obj={result['objVal']:.4f}" if result.get("objVal") is not None else "no-obj"
-            print(f"  [{icon}] {wlabel:15s} {result['status']:12s} "
-                  f"{obj_str}  {solve_time:.1f}s  -> {run_id}")
+                icons = {"optimal": "OK", "infeasible": "IN",
+                         "error": "ER", "norm_failed": "NF"}
+                icon = icons.get(result["status"], "??")
+                obj_str = f"obj={result['objVal']:.4f}" if result.get("objVal") is not None else "no-obj"
+                print(f"  [{icon}] {wlabel:15s} mu={mu:.1f} theta={theta:.1f}  "
+                      f"{result['status']:12s} {obj_str}  {solve_time:.1f}s  -> {run_id}")
 
         del data
 
 
-def _make_run_dir(base_dir, tier_label, seed, weight_label):
+def _make_run_dir(base_dir, tier_label, seed, weight_label, mulabel, mu, theta):
     base = Path(base_dir)
     base.mkdir(parents=True, exist_ok=True)
     nums = []
@@ -460,7 +549,7 @@ def _make_run_dir(base_dir, tier_label, seed, weight_label):
             except (IndexError, ValueError):
                 pass
     next_num = max(nums) + 1 if nums else 1
-    name = f"run_{next_num:04d}__{tier_label}__s{seed}__{weight_label}"
+    name = f"run_{next_num:04d}__{tier_label}__s{seed}__{weight_label}__mu{mu}_theta{theta}"
     path = base / name
     path.mkdir(parents=True, exist_ok=True)
     return path, f"run_{next_num:04d}"
