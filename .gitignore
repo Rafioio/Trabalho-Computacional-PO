@@ -40,7 +40,11 @@ gurobi.log
 .DS_Store
 Thumbs.db
 
-# Generated JSON data (regenerate via loader.py)
+# Generated documentation and reports
+docs/
+
+# Text documents
+*.txt
 src/data/dados.json
 
 # AI jailbreak test file

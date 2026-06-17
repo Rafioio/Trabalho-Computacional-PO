@@ -83,9 +83,15 @@ src/
 ├── scripts/
 │   └── map_viewer.py      # Visualização de cenários e soluções
 ├── utils/
-│   ├── generate_data.py   # Gerador de dados sintéticos realistas
-│   ├── validator.py       # Validação de consistência dos dados
-│   └── export_solution.py # Exportação de resultados (→ solucao.json)
+│   ├── generate_data.py      # Gerador de dados sintéticos realistas
+│   ├── validator.py          # Validação de consistência dos dados
+│   ├── export_solution.py    # Exportação de resultados (→ solucao.json)
+│   ├── convert_csv_to_data.py# Conversor de dados BH (CSV → JSON)
+│   └── reporting/            # Geração de relatórios e fronteira de Pareto
+│       ├── run_pareto.py              # Experimento da fronteira de Pareto
+│       ├── analyze_and_report.py      # Relatório completo dos experimentos
+│       ├── generate_viz.py            # Geração de visualizações
+│       └── run_remaining_and_report.py# Relatório dos tiers superiores
 └── run.py                 # Ponto de entrada principal
 
 ```
@@ -148,7 +154,66 @@ python src/scripts/map_viewer.py dados_generated.json --solution solucao.json --
 
 ```
 
-### 4. Exportar Solução para Diferentes Formatos
+### 4. Converter Dados da BH (CSV da PBH)
+
+Converter o CSV público de pontos de ônibus de Belo Horizonte para o formato JSON do modelo:
+
+```bash
+# Converter todas as rotas (~70k pontos)
+python src/utils/convert_csv_to_data.py --output dados_bh.json
+
+# Instância pequena para testes (3 rotas, 20 pontos cada, 5 zonas)
+python src/utils/convert_csv_to_data.py \
+    --max-routes 3 --max-stops 20 --num-q 5 \
+    --output small_bh.json
+
+# Instância personalizada
+python src/utils/convert_csv_to_data.py \
+    --max-routes 5 --max-stops 50 --num-q 30 \
+    --d-walk-max 400 --d-route-max 800 \
+    --capt 1000 --seed 123 \
+    --output dados_bh_5rotas.json
+```
+
+O CSV de entrada deve estar em `src/data/20260504_ponto_onibus.csv`. O conversor:
+- Deduplica pontos pelo par de coordenadas UTM
+- Preserva a ordem das paradas por rota
+- Gera zonas de demanda sintéticas próximas aos pontos reais
+- Atribui índices de qualidade técnica via distribuição beta
+
+### 5. Fronteira de Pareto
+
+Varrer o macro-peso mu com granularidade fina para construir a fronteira de Pareto:
+
+```bash
+# Executar experimento Pareto (tier pequena: N=50, K=4, Q=10)
+python src/utils/reporting/run_pareto.py
+```
+
+O script:
+- Gera dados sintéticos para as sementes 42 e 123
+- Aplica normalização utopia/anti-utopia
+- Varre mu de 0.1 a 3.0 (passo 0.1) com theta=1.0 fixo
+- Constrói a fronteira de Pareto (50 pontos não-dominados)
+- Gera gráfico em `docs/pareto/pareto_frontier.png`
+- Salva relatório em `docs/pareto/pareto_report.md`
+
+### 6. Relatório Completo dos Experimentos
+
+Gerar relatório consolidado a partir dos resultados do batch_runner:
+
+```bash
+# Analisar runs e gerar relatório com visualizações
+python src/utils/reporting/analyze_and_report.py
+
+# Executar tiers não completados (muito_grande, extrema) e gerar relatório
+python src/utils/reporting/run_remaining_and_report.py
+
+# Regenerar visualizações para runs selecionadas
+python src/utils/reporting/generate_viz.py
+```
+
+### 7. Exportar Solução para Diferentes Formatos
 
 ```bash
 # Exportar solução para JSON (já feito automaticamente pelo run.py)
